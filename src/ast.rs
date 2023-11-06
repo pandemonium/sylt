@@ -3,7 +3,7 @@ use core::fmt;
 
 #[derive(Debug)]
 pub struct Program {
-    pub definitions: Vec<Declaration>,
+    pub declarations: Vec<Declaration>,
     pub entry_point: Block,
 }
 
@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn show_hello_world_program() {
         let ast = Program {
-            definitions: vec![Declaration::Function(FunctionDef {
+            declarations: vec![Declaration::Function(FunctionDef {
                 name: Name::simple("print_hello_world"),
                 parameters: vec![],
                 return_type: Type::Unit,

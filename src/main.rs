@@ -1,13 +1,28 @@
 use sylt::{
     ast::*,
+    lexer,
     runtime::{
         interpreter,
         intrinsics::{artithmetic::operator, io},
-    }, lexer, syntax,
+    },
+    syntax,
 };
 
 fn main() {
     let source = r#"
+    fn make_hay(whoami: Text, age: Int) -> Text {
+        while 1 + 2 {
+            println("Hi, mom");
+        }
+    }fn make_money() -> Text {
+        if 1 + 2 {
+            println("Hi, mom");
+        } else {
+            let bar = 10 + make_hay("Patrik Andersson", 97.0) * 1;
+        }
+        return "Hello, world"+1;
+    }
+ 
 {
     println("Hello, world");
     while True {

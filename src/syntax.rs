@@ -27,13 +27,10 @@ pub mod types {
 
 pub fn analyze(input: &[char]) -> types::Result<ast::Program> {
     let toks = lexer::run(input)?;
-    match block().parse(&toks) {
-        Parsed::Emits(entry_point, remains) => {
+    match program_declaration().parse(&toks) {
+        Parsed::Emits(program, remains) => {
             println!("Remains: {remains:#?}");
-            Ok(ast::Program {
-                definitions: vec![],
-                entry_point,
-            })
+            Ok(program)
         }
         Parsed::Diverges => Err(types::Error::Eof),
     }
@@ -207,6 +204,7 @@ fn if_statement() -> impl Parsimonious<ast::Statement, Token = lex::Token> {
 fn return_statement() -> impl Parsimonious<ast::Statement, Token = lex::Token> {
     keyword(lex::Keyword::Return)
         .skip_left(expression())
+        .skip_right(separator(lex::Separator::Semicolon))
         .map(ast::Statement::Return)
 }
 
@@ -255,6 +253,18 @@ fn function_declaration() -> impl Parsimonious<ast::Declaration, Token = lex::To
             },
         )
         .map(ast::Declaration::Function)
+}
+
+// I would like to be able to sprinkle statements in between function declarations
+// and also not have to enclose the entry point code within braces.
+fn program_declaration() -> impl Parsimonious<ast::Program, Token = lex::Token> {
+    function_declaration()
+        .zero_or_more()
+        .and_also(block())
+        .map(|(definitions, entry_point)| ast::Program {
+            declarations: definitions,
+            entry_point,
+        })
 }
 
 #[cfg(test)]

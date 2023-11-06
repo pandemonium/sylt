@@ -231,7 +231,7 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new(program: ast::Program, intrinsics: SymbolTable) -> Self {
-        let program_definitions = program.definitions.iter().fold(
+        let program_definitions = program.declarations.iter().fold(
             collections::HashMap::<_, ast::Declaration>::new(),
             |mut table, def| {
                 table.insert(def.name().clone(), def.clone());
