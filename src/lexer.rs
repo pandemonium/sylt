@@ -33,7 +33,10 @@ pub mod types {
         LeftBrace,
         RightBrace,
         LessThan,
+        LessThanOrEqual,
         GreaterThan,
+        GreaterThanOrEqual,
+        Equals,
         Colon,
         Semicolon,
         Comma,
@@ -46,10 +49,11 @@ pub mod types {
         Star,
         Slash,
         Percent,
+        ThinRightArrow,
     }
 
     lazy_static! {
-        pub static ref SEPARATORS: &'static [Separator] = &[
+        pub static ref SIMPLE_SEPARATORS: &'static [Separator] = &[
             Separator::LeftParen,
             Separator::RightParen,
             Separator::LeftBrace,
@@ -72,11 +76,14 @@ pub mod types {
     }
 
     lazy_static! {
-        pub static ref SEPARATOR_CHARS: Vec<char> = make_separator_chars();
+        pub static ref SIMPLE_SEPARATOR_CHARS: Vec<char> = make_separator_chars();
     }
 
     fn make_separator_chars() -> Vec<char> {
-        SEPARATORS.iter().map(|c| c.into_char()).collect::<Vec<_>>()
+        SIMPLE_SEPARATORS
+            .iter()
+            .map(|c| c.into_char())
+            .collect::<Vec<_>>()
     }
 
     impl Separator {
@@ -100,11 +107,20 @@ pub mod types {
                 Self::Star => '*',
                 Self::Slash => '/',
                 Self::Percent => '%',
+
+                // Compounds, never match these
+                Self::LessThanOrEqual => '$',
+                Self::GreaterThanOrEqual => '$',
+                Self::Equals => '$',
+                Self::ThinRightArrow => '$',
             }
         }
 
         pub fn try_from_char(c: char) -> Option<Self> {
-            SEPARATORS.iter().find(|s| s.into_char() == c).copied()
+            SIMPLE_SEPARATORS
+                .iter()
+                .find(|s| s.into_char() == c)
+                .copied()
         }
     }
 
@@ -169,8 +185,20 @@ pub mod parsers {
         whitespace().skip_left(produce)
     }
 
+    fn compound_separator() -> impl Parsimonious<Token, Token = char> {
+        let gte = string(">=").map(|_| types::Separator::GreaterThanOrEqual);
+        let lte = string("<=").map(|_| types::Separator::LessThanOrEqual);
+        let equals = string("==").map(|_| types::Separator::Equals);
+        let arrow = string("->").map(|_| types::Separator::ThinRightArrow);
+
+        gte.or_else(lte)
+            .or_else(equals)
+            .or_else(arrow)
+            .map(types::Token::Separator)
+    }
+
     fn separator() -> impl Parsimonious<Token, Token = char> {
-        one_of(&types::SEPARATOR_CHARS).map(|c| {
+        one_of(&types::SIMPLE_SEPARATOR_CHARS).map(|c| {
             types::Separator::try_from_char(c)
                 .map(types::Token::Separator)
                 .expect("legal separator char")
@@ -253,6 +281,7 @@ pub mod parsers {
         lexeme(
             literal()
                 .or_else(identifier_or_keyword())
+                .or_else(compound_separator())
                 .or_else(separator()),
         )
     }
@@ -423,5 +452,41 @@ mod tests {
         );
     }
 
-//    #[test]
+    #[test]
+    fn compound_separators() {
+        let input = r#" fn foo() -> Int { while 2 >= 1 {} while 2 <= 1 {} } "#;
+        let was = run(&input.chars().collect::<Vec<_>>());
+        assert_eq!(
+            was.unwrap(),
+            vec![
+                T::Keyword(Keyword::Fn),
+                T::Identifier(Identifier("foo".into())),
+                T::Separator(Separator::LeftParen),
+                T::Separator(Separator::RightParen),
+
+                T::Separator(Separator::ThinRightArrow),
+
+                T::Identifier(Identifier("Int".into())),
+
+                T::Separator(Separator::LeftBrace),
+
+                T::Keyword(Keyword::While),
+                T::Literal(Literal::Integer(2)),
+                T::Separator(Separator::GreaterThanOrEqual),
+                T::Literal(Literal::Integer(1)),
+                T::Separator(Separator::LeftBrace),
+                T::Separator(Separator::RightBrace),
+
+                T::Keyword(Keyword::While),
+                T::Literal(Literal::Integer(2)),
+                T::Separator(Separator::LessThanOrEqual),
+                T::Literal(Literal::Integer(1)),
+                T::Separator(Separator::LeftBrace),
+                T::Separator(Separator::RightBrace),
+
+                T::Separator(Separator::RightBrace),
+
+            ]
+        );
+    }
 }

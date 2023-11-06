@@ -11,8 +11,11 @@ fn main() {
 {
     println("Hello, world");
     while True {
-        let foo = 124 + 42.5 / 10 * 0.1;
-        save(427, "data.txt");
+        if 12/34*56 + "Kalle" {
+            let foo = 124 + 42.5 / 10 * 0.1;
+        } else {
+            save(427, "data.txt");
+        }
     }
 }    
     "#;

@@ -7,7 +7,7 @@ pub struct Program {
     pub entry_point: Block,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Declaration {
     Function(FunctionDef),
     IntrinsicFunction(IntrinsicFunctionDef),
@@ -47,7 +47,7 @@ impl Declaration {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct IntrinsicFunctionDef {
     pub name: Name,
     pub parameters: Vec<Parameter>,
@@ -68,7 +68,7 @@ impl IntrinsicFunctionDef {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunctionDef {
     pub name: Name,
     pub parameters: Vec<Parameter>,
@@ -123,7 +123,6 @@ pub struct Block {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
-    // Aren't these inside out?
     Literal(Constant),
     Variable(Name),
     ApplyInfix {
@@ -137,6 +136,8 @@ pub enum Expression {
     },
 }
 
+// I don't like these
+// It should be: type Name = Simple of string | Compound of string * Name;
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct Name {
     pub scope_path: Vec<String>,
@@ -283,7 +284,9 @@ pub enum Operator {
     Divides,
     Modulo,
     LessThan,
+    LessThanOrEqual,
     GreaterThan,
+    Equals,
 }
 
 impl Operator {
@@ -295,7 +298,9 @@ impl Operator {
             Operator::Divides => "divides".into(),
             Operator::Modulo => "modulo".into(),
             Operator::LessThan => "less_than".into(),
+            Operator::LessThanOrEqual => "less_than_or_equal".into(),
             Operator::GreaterThan => "greater_than".into(),
+            Operator::Equals => "equals".into(),
         }
     }
 
@@ -322,9 +327,10 @@ impl Operator {
             Self::Divides,
             Self::Modulo,
             Self::LessThan,
+            Self::LessThanOrEqual,
             Self::GreaterThan,
+            Self::Equals,
             // boolean algebra
-            // comparisons
         ]
         .into_iter()
         .find(|op| op.local_name() == name)

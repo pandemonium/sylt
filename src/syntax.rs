@@ -171,6 +171,8 @@ fn statement_inner() -> impl Parsimonious<ast::Statement, Token = lex::Token> {
     let_statement()
         .or_else(while_statement())
         .or_else(statement_expression())
+        .or_else(if_statement())
+        .or_else(return_statement())
 }
 
 // All these Token = lex::Token have to go. How? Why aren't they "inherited?"
@@ -190,6 +192,24 @@ fn while_statement() -> impl Parsimonious<ast::Statement, Token = lex::Token> {
         .map(|(predicate, body)| ast::Statement::While { predicate, body })
 }
 
+fn if_statement() -> impl Parsimonious<ast::Statement, Token = lex::Token> {
+    keyword(lex::Keyword::If)
+        .skip_left(expression())
+        .and_also(block())
+        .and_also(keyword(lex::Keyword::Else).skip_left(block()))
+        .map(|((predicate, when_true), when_false)| ast::Statement::If {
+            predicate,
+            when_true,
+            when_false,
+        })
+}
+
+fn return_statement() -> impl Parsimonious<ast::Statement, Token = lex::Token> {
+    keyword(lex::Keyword::Return)
+        .skip_left(expression())
+        .map(ast::Statement::Return)
+}
+
 fn block() -> impl Parsimonious<ast::Block, Token = lex::Token> {
     enclosed_within(
         separator(lex::Separator::LeftBrace),
@@ -205,10 +225,40 @@ fn statement_expression() -> impl Parsimonious<ast::Statement, Token = lex::Toke
         .map(ast::Statement::Expression)
 }
 
+fn function_declaration() -> impl Parsimonious<ast::Declaration, Token = lex::Token> {
+    let parameter = identifier()
+        .skip_right(separator(lex::Separator::Colon))
+        .and_also(identifier())
+        .map(|(name, type_)| ast::Parameter {
+            name,
+            type_: ast::Type::simple(&ast::Name::simple(&type_)),
+        });
+
+    let formal_parameters = enclosed_within(
+        separator(lex::Separator::LeftParen),
+        separator(lex::Separator::RightParen),
+        separated_by(parameter, separator(lex::Separator::Comma)),
+    );
+
+    keyword(lex::Keyword::Fn)
+        .skip_left(identifier().map(|x| ast::Name::simple(&x)))
+        .and_also(formal_parameters)
+        .skip_right(separator(lex::Separator::ThinRightArrow))
+        .and_also(identifier().map(|x| ast::Type::simple(&ast::Name::simple(&x))))
+        .and_also(block())
+        .map(
+            |(((name, parameters), return_type), body)| ast::FunctionDef {
+                name,
+                parameters,
+                return_type,
+                body,
+            },
+        )
+        .map(ast::Declaration::Function)
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::ast;
-
     use super::{
         ast::*,
         lex::Literal::*,
@@ -216,6 +266,7 @@ mod tests {
         lex::{Token as T, *},
         Parsimonious,
     };
+    use crate::ast;
 
     #[test]
     fn let_statement() {
@@ -335,6 +386,118 @@ mod tests {
     }
 
     #[test]
+    fn if_statement() {
+        let input = &[
+            T::Keyword(Keyword::If),
+            T::Literal(Literal::Integer(123)),
+            T::Separator(Separator::Star), // change to LessThan once implemented
+            T::Literal(Literal::Integer(456)),
+            T::Separator(Separator::LeftBrace),
+            T::Keyword(Keyword::Let),
+            T::Identifier(Identifier("x".into())),
+            T::Separator(Assign),
+            T::Literal(FloatingPoint(427.427)),
+            T::Separator(Semicolon),
+            T::Identifier(Identifier("foo".into())),
+            T::Separator(Separator::LeftParen),
+            T::Literal(Literal::Integer(1)),
+            T::Separator(Separator::Plus),
+            T::Literal(Literal::Integer(2)),
+            T::Separator(Separator::RightParen),
+            T::Separator(Semicolon),
+            T::Separator(Separator::RightBrace),
+            T::Keyword(Keyword::Else),
+            T::Separator(Separator::LeftBrace),
+            T::Keyword(Keyword::Let),
+            T::Identifier(Identifier("x".into())),
+            T::Separator(Assign),
+            T::Literal(Literal::Text("Hi, mom".into())),
+            T::Separator(Semicolon),
+            T::Separator(Separator::RightBrace),
+        ];
+        let was = super::statement().parse(input);
+        assert_eq!(
+            was.clone().emits(),
+            Some(ast::Statement::If {
+                predicate: ast::Expression::ApplyInfix {
+                    lhs: Box::new(Expression::Literal(Constant::Int(123))),
+                    symbol: Operator::Times,
+                    rhs: Box::new(Expression::Literal(Constant::Int(456))),
+                },
+                when_true: ast::Block {
+                    statements: vec![
+                        ast::Statement::Let {
+                            lhs: "x".into(),
+                            rhs: ast::Expression::Literal(Constant::Float(427.427))
+                        },
+                        Statement::Expression(Expression::Apply {
+                            symbol: Select::Function(ast::Name::simple("foo")),
+                            arguments: vec![ast::Expression::ApplyInfix {
+                                lhs: Box::new(Expression::Literal(Constant::Int(1))),
+                                symbol: Operator::Plus,
+                                rhs: Box::new(Expression::Literal(Constant::Int(2)))
+                            }]
+                        })
+                    ]
+                },
+                when_false: ast::Block {
+                    statements: vec![ast::Statement::Let {
+                        lhs: "x".into(),
+                        rhs: ast::Expression::Literal(Constant::Text("Hi, mom".into()))
+                    }]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn return_statement() {
+        let input = &[
+            T::Keyword(Keyword::Return),
+            T::Literal(Literal::Integer(42)),
+        ];
+        let was = super::statement().parse(input);
+        assert_eq!(
+            was.clone().emits(),
+            Some(Statement::Return(Expression::Literal(Constant::Int(42))))
+        );
+
+        let input = &[
+            T::Keyword(Keyword::Return),
+            T::Literal(Literal::Integer(1)),
+            T::Separator(Separator::Plus),
+            T::Literal(Literal::Integer(2)),
+            T::Separator(Separator::Plus),
+            T::Literal(Literal::Integer(3)),
+            T::Separator(Separator::Minus),
+            T::Literal(Literal::Integer(4)),
+            T::Separator(Separator::Star),
+            T::Literal(Literal::Integer(5)),
+        ];
+        let was = super::statement().parse(input);
+        assert_eq!(
+            was.clone().emits(),
+            Some(Statement::Return(Expression::ApplyInfix {
+                lhs: Box::new(Expression::ApplyInfix {
+                    lhs: Box::new(Expression::ApplyInfix {
+                        lhs: Box::new(Expression::Literal(Constant::Int(1))),
+                        symbol: Operator::Plus,
+                        rhs: Box::new(Expression::Literal(Constant::Int(2)))
+                    }),
+                    symbol: Operator::Plus,
+                    rhs: Box::new(Expression::Literal(Constant::Int(3)))
+                }),
+                symbol: Operator::Minus,
+                rhs: Box::new(Expression::ApplyInfix {
+                    lhs: Box::new(Expression::Literal(Constant::Int(4))),
+                    symbol: Operator::Times,
+                    rhs: Box::new(Expression::Literal(Constant::Int(5)))
+                })
+            }))
+        );
+    }
+
+    #[test]
     fn infix_expressions() {
         //        let input = r#"1+2+3-4*5"#;
         let input = &[
@@ -387,10 +550,10 @@ mod tests {
         let was = super::expression().parse(input);
         assert_eq!(
             was.clone().emits(),
-            Some(ast::Expression::ApplyInfix {
+            Some(Expression::ApplyInfix {
                 lhs: Box::new(Expression::Apply {
-                    symbol: Select::Function(ast::Name::simple("foo")),
-                    arguments: vec![ast::Expression::ApplyInfix {
+                    symbol: Select::Function(Name::simple("foo")),
+                    arguments: vec![Expression::ApplyInfix {
                         lhs: Box::new(Expression::Literal(Constant::Int(1))),
                         symbol: Operator::Plus,
                         rhs: Box::new(Expression::Literal(Constant::Int(2)))
@@ -399,6 +562,67 @@ mod tests {
                 symbol: Operator::Times,
                 rhs: Box::new(Expression::Literal(Constant::Int(3)))
             })
+        );
+    }
+
+    #[test]
+    fn function_declaration() {
+        let input = &[
+            T::Keyword(Keyword::Fn),
+            T::Identifier(Identifier("make_hay".into())),
+            T::Separator(Separator::LeftParen),
+            T::Identifier(Identifier("name".into())),
+            T::Separator(Separator::Colon),
+            T::Identifier(Identifier("Int".into())),
+            T::Separator(Separator::Comma),
+            T::Identifier(Identifier("x".into())),
+            T::Separator(Separator::Colon),
+            T::Identifier(Identifier("Boolean".into())),
+            T::Separator(Separator::RightParen),
+            // This is not this simple. I need a compound separator: ->
+            T::Separator(Separator::ThinRightArrow),
+            T::Identifier(Identifier("Text".into())),
+            T::Separator(Separator::LeftBrace),
+            T::Keyword(Keyword::While),
+            T::Literal(Boolean(true)),
+            T::Separator(Separator::LeftBrace),
+            T::Keyword(Keyword::Let),
+            T::Identifier(Identifier("x".into())),
+            T::Separator(Assign),
+            T::Literal(FloatingPoint(427.427)),
+            T::Separator(Semicolon),
+            T::Separator(Separator::RightBrace),
+            //            T::Keyword(Keyword::Fn),
+            T::Separator(Separator::RightBrace),
+        ];
+        let was = super::function_declaration().parse(input);
+        assert_eq!(
+            was.clone().emits(),
+            Some(Declaration::Function(FunctionDef {
+                name: Name::simple("make_hay"),
+                parameters: vec![
+                    Parameter {
+                        name: "name".into(),
+                        type_: Type::simple(&Name::simple("Int"))
+                    },
+                    Parameter {
+                        name: "x".into(),
+                        type_: Type::simple(&Name::simple("Boolean"))
+                    },
+                ],
+                return_type: Type::simple(&Name::simple("Text")),
+                body: Block {
+                    statements: vec![Statement::While {
+                        predicate: Expression::Literal(Constant::Boolean(true)),
+                        body: Block {
+                            statements: vec![Statement::Let {
+                                lhs: "x".into(),
+                                rhs: Expression::Literal(Constant::Float(427.427))
+                            },]
+                        }
+                    },]
+                }
+            }))
         )
     }
 }
