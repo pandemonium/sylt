@@ -1,9 +1,5 @@
 use artithmetic::operator;
-
-use super::{
-    ast::{self},
-    interpreter,
-};
+use crate::{ast, runtime::interpreter};
 
 pub fn invoke_intrinsic_function(
     function: &ast::IntrinsicFunctionDef,
@@ -11,7 +7,10 @@ pub fn invoke_intrinsic_function(
 ) -> Result<ast::Constant, interpreter::Error> {
     // Really find a way to store a function parameter
     if operator::in_prefix(&function.name()) {
-        Ok(operator::apply_by_name(function.name().local_name(), arguments)?)
+        Ok(operator::apply_by_name(
+            function.name().local_name(),
+            arguments,
+        )?)
     } else if io::in_prefix(&function.name()) {
         Ok(io::apply_by_name(function.name().local_name(), arguments)?)
     } else {
@@ -27,7 +26,7 @@ pub mod artithmetic {
                 Constant::{self, *},
                 Operator::{self, *},
             },
-            interpreter::{self, Error},
+            runtime::interpreter::{self, Error},
         };
 
         static PREFIX: &[&str] = &["builtins", "arithmetic", "operator"];
@@ -102,7 +101,7 @@ pub mod artithmetic {
 }
 
 mod text {
-    use crate::{ast, interpreter};
+    use crate::{ast, runtime::interpreter};
 
     static PREFIX: &[&str] = &["builtins", "text"];
 
@@ -127,7 +126,7 @@ mod text {
 }
 
 pub mod io {
-    use crate::{ast, interpreter};
+    use crate::{ast, runtime::interpreter};
 
     static PREFIX: &[&str] = &["std", "io"];
 

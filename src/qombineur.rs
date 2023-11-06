@@ -1,13 +1,13 @@
-use std::marker;
+use std::{fmt, marker};
 
 #[derive(Clone, PartialEq, Debug)]
-enum Parsed<'a, A, Token> {
+pub enum Parsed<'a, A, Token> {
     Emits(A, &'a [Token]),
     Diverges,
 }
 
 impl<'a, A, Token> Parsed<'a, A, Token> {
-    fn map<F, B>(self, f: F) -> Parsed<'a, B, Token>
+    pub fn map<F, B>(self, f: F) -> Parsed<'a, B, Token>
     where
         F: FnOnce(A) -> B,
     {
@@ -17,7 +17,7 @@ impl<'a, A, Token> Parsed<'a, A, Token> {
         }
     }
 
-    fn flat_map<F, B>(self, f: F) -> Parsed<'a, B, Token>
+    pub fn flat_map<F, B>(self, f: F) -> Parsed<'a, B, Token>
     where
         F: FnOnce(A, &'a [Token]) -> Parsed<'a, B, Token>,
     {
@@ -27,7 +27,17 @@ impl<'a, A, Token> Parsed<'a, A, Token> {
         }
     }
 
-    fn emits(self) -> Option<A> {
+    pub fn filter_map<F, B>(self, p: F) -> Parsed<'a, B, Token>
+    where
+        F: FnOnce(&A) -> Option<B>,
+    {
+        match self.map(|x| p(&x)) {
+            Parsed::Emits(Some(b), remains) => Parsed::Emits(b, remains),
+            _otherwise => Parsed::Diverges,
+        }
+    }
+
+    pub fn emits(self) -> Option<A> {
         if let Self::Emits(x, _) = self {
             Some(x)
         } else {
@@ -35,7 +45,7 @@ impl<'a, A, Token> Parsed<'a, A, Token> {
         }
     }
 
-    fn into_option(self) -> Option<(A, &'a [Token])> {
+    pub fn into_option(self) -> Option<(A, &'a [Token])> {
         if let Self::Emits(x, remains) = self {
             Some((x, remains))
         } else {
@@ -44,8 +54,9 @@ impl<'a, A, Token> Parsed<'a, A, Token> {
     }
 }
 
-trait Parsimonious<A>: Clone + Sized {
-    type Token;
+pub trait Parsimonious<A>: Clone + Sized {
+    // move Clone and Sized to impl
+    type Token: Clone;
 
     fn parse<'a>(self, input: &'a [Self::Token]) -> Parsed<'a, A, Self::Token>;
 
@@ -78,6 +89,18 @@ trait Parsimonious<A>: Clone + Sized {
         }
     }
 
+    fn filter_map<F, B>(self, p: F) -> FilterMap<F, A, B, Self>
+    where
+        F: FnOnce(&A) -> Option<B>,
+    {
+        FilterMap {
+            inner: self,
+            p,
+            _maps_to: marker::PhantomData,
+            _emits: marker::PhantomData,
+        }
+    }
+
     fn or_else<Q>(self, rhs: Q) -> OrElse<Self, Q>
     where
         Q: Parsimonious<A, Token = Self::Token>,
@@ -96,11 +119,11 @@ trait Parsimonious<A>: Clone + Sized {
         Optionally(self)
     }
 
-    fn skip_following<Q, Z>(self, consequent: Q) -> SkipConsequent<Self, Q, Z> {
+    fn skip_right<Q, Z>(self, consequent: Q) -> SkipConsequent<Self, Q, Z> {
         skip_consequent(self, consequent)
     }
 
-    fn skip_preceeding<Q, Z>(self, antecedent: Q) -> SkipAntecedent<Self, Q, Z> {
+    fn skip_left<Q, Z>(self, antecedent: Q) -> SkipAntecedent<Self, Q, Z> {
         skip_antecedent(self, antecedent)
     }
 
@@ -115,10 +138,34 @@ trait Parsimonious<A>: Clone + Sized {
     fn one_or_more(self) -> OneOrMore<Self> {
         OneOrMore(self)
     }
+
+    fn with_name(self) -> WithName<Self, A> {
+        WithName(self, marker::PhantomData)
+    }
+}
+
+// How would this thing work?
+// A fmt::Display that matches parsers wrapping others and can
+// pretty-print a tree?
+#[derive(Clone, Copy)]
+pub struct WithName<P, A>(P, marker::PhantomData<A>);
+
+impl<P, A> Parsimonious<A> for WithName<P, A>
+where
+    P: Parsimonious<A>,
+    P::Token: Clone,
+    A: Clone,
+{
+    type Token = P::Token;
+
+    fn parse<'a>(self, input: &'a [Self::Token]) -> Parsed<'a, A, Self::Token> {
+        let WithName(inner, ..) = self;
+        inner.parse(input)
+    }
 }
 
 #[derive(Clone, Copy)]
-struct Ignore<P, A>(P, marker::PhantomData<A>);
+pub struct Ignore<P, A>(P, marker::PhantomData<A>);
 
 impl<P, A> Parsimonious<()> for Ignore<P, A>
 where
@@ -134,12 +181,12 @@ where
     }
 }
 
-fn skip_antecedent<P, Q, C>(antecedent: P, consequent: Q) -> SkipAntecedent<P, Q, C> {
+pub fn skip_antecedent<P, Q, C>(antecedent: P, consequent: Q) -> SkipAntecedent<P, Q, C> {
     SkipAntecedent(antecedent, consequent, marker::PhantomData)
 }
 
 #[derive(Clone, Copy)]
-struct SkipAntecedent<P, Q, C>(P, Q, marker::PhantomData<C>);
+pub struct SkipAntecedent<P, Q, C>(P, Q, marker::PhantomData<C>);
 
 impl<P, Q, A, C> Parsimonious<C> for SkipAntecedent<P, Q, A>
 where
@@ -157,7 +204,7 @@ where
     }
 }
 
-fn skip_consequent<P, Q, C>(antecedent: P, consequent: Q) -> SkipConsequent<P, Q, C> {
+pub fn skip_consequent<P, Q, C>(antecedent: P, consequent: Q) -> SkipConsequent<P, Q, C> {
     SkipConsequent(antecedent, consequent, marker::PhantomData)
 }
 
@@ -178,14 +225,14 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct SkipConsequent<P, Q, C>(P, Q, marker::PhantomData<C>);
+pub struct SkipConsequent<P, Q, C>(P, Q, marker::PhantomData<C>);
 
-fn diverge<T>() -> Diverged<T> {
+pub fn diverge<T>() -> Diverged<T> {
     Diverged(marker::PhantomData)
 }
 
 #[derive(Clone, Copy)]
-struct Diverged<T>(marker::PhantomData<T>);
+pub struct Diverged<T>(marker::PhantomData<T>);
 
 impl<T> Parsimonious<()> for Diverged<T>
 where
@@ -199,7 +246,7 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct OneOrMore<P>(P);
+pub struct OneOrMore<P>(P);
 
 // Re-write in terms of Extends trait
 impl<P, A> Parsimonious<Vec<A>> for OneOrMore<P>
@@ -226,7 +273,7 @@ where
 
 // This could be re-written such that Option is not the default
 #[derive(Clone, Copy)]
-struct Optionally<P>(P);
+pub struct Optionally<P>(P);
 
 impl<P, A> Parsimonious<Option<A>> for Optionally<P>
 where
@@ -243,7 +290,7 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct ZeroOrMore<P>(P);
+pub struct ZeroOrMore<P>(P);
 
 impl<P, A> Parsimonious<Vec<A>> for ZeroOrMore<P>
 where
@@ -271,7 +318,31 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct Map<F, A, P> {
+pub struct FilterMap<F, A, B, P> {
+    inner: P,
+    p: F,
+    _maps_to: marker::PhantomData<A>,
+    _emits: marker::PhantomData<B>,
+}
+
+impl<F, A, B, P> Parsimonious<B> for FilterMap<F, A, B, P>
+where
+    P: Parsimonious<A>,
+    P::Token: Clone,
+    F: FnOnce(&A) -> Option<B> + Clone,
+    A: Clone,
+    B: Clone,
+{
+    type Token = P::Token;
+
+    fn parse<'a>(self, input: &'a [Self::Token]) -> Parsed<'a, B, Self::Token> {
+        let FilterMap { inner, p, .. } = self;
+        inner.parse(input).filter_map(p)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Map<F, A, P> {
     inner: P,
     f: F,
     _emits: marker::PhantomData<A>,
@@ -292,7 +363,7 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct FlatMap<F, A, P> {
+pub struct FlatMap<F, A, P> {
     inner: P,
     f: F,
     _emits: marker::PhantomData<A>,
@@ -314,7 +385,7 @@ where
     }
 }
 
-fn empty<A, T>(produces: A) -> Empty<A, T>
+pub fn empty<A, T>(produces: A) -> Empty<A, T>
 where
     A: Clone,
 {
@@ -325,7 +396,7 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct Empty<A, T> {
+pub struct Empty<A, T> {
     produces: A,
     _token_type: marker::PhantomData<T>,
 }
@@ -343,9 +414,9 @@ where
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Any<T>(marker::PhantomData<T>);
+pub struct Any<T>(marker::PhantomData<T>);
 
-fn any<T>() -> Any<T> {
+pub fn any<T>() -> Any<T> {
     Any(marker::PhantomData)
 }
 
@@ -363,7 +434,7 @@ where
     }
 }
 
-fn such_that<T, F>(predicate: F) -> SuchThat<F, T>
+pub fn such_that<T, F>(predicate: F) -> SuchThat<F, T>
 where
     F: Fn(&T) -> bool,
 {
@@ -374,7 +445,7 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct SuchThat<F, T> {
+pub struct SuchThat<F, T> {
     predicate: F,
     _token_type: marker::PhantomData<T>,
 }
@@ -394,26 +465,26 @@ where
     }
 }
 
-fn this<T>(token: T) -> impl Parsimonious<T, Token = T>
+pub fn this<T>(token: T) -> impl Parsimonious<T, Token = T>
 where
     T: PartialEq + Clone,
 {
     such_that(move |x| x == &token)
 }
 
-fn char(c: char) -> impl Parsimonious<char, Token = char> {
+pub fn char(c: char) -> impl Parsimonious<char, Token = char> {
     this(c)
 }
 
-fn letter() -> impl Parsimonious<char, Token = char> {
+pub fn letter() -> impl Parsimonious<char, Token = char> {
     such_that(|c| char::is_alphabetic(*c))
 }
 
-fn digit() -> impl Parsimonious<char, Token = char> {
+pub fn digit() -> impl Parsimonious<char, Token = char> {
     such_that(|c| char::is_digit(*c, 10))
 }
 
-fn one_of<T>(choice: &[T]) -> impl Parsimonious<T>
+pub fn one_of<T>(choice: &[T]) -> impl Parsimonious<T, Token = T> + Clone
 where
     T: PartialEq + Clone,
 {
@@ -421,12 +492,12 @@ where
     such_that(move |c| choice.contains(c))
 }
 
-fn take<T>(i: usize) -> Take<T> {
+pub fn take<T>(i: usize) -> Take<T> {
     Take(i, marker::PhantomData)
 }
 
 #[derive(Clone, Copy)]
-struct Take<T>(usize, marker::PhantomData<T>);
+pub struct Take<T>(usize, marker::PhantomData<T>);
 
 impl<T> Parsimonious<Vec<T>> for Take<T>
 where
@@ -447,11 +518,11 @@ where
     }
 }
 
-fn string(literal: &str) -> LiteralMatch<char> {
+pub fn string(literal: &str) -> LiteralMatch<char> {
     LiteralMatch(literal.chars().collect())
 }
 
-fn literal<T>(literal: &[T]) -> LiteralMatch<T>
+pub fn literal<T>(literal: &[T]) -> LiteralMatch<T>
 where
     T: Clone,
 {
@@ -459,7 +530,7 @@ where
 }
 
 #[derive(Clone)]
-struct LiteralMatch<T>(Vec<T>);
+pub struct LiteralMatch<T>(Vec<T>);
 
 impl<T> Parsimonious<Vec<T>> for LiteralMatch<T>
 where
@@ -479,7 +550,7 @@ where
     }
 }
 
-fn separated_by<W, S, T>(word: W, separator: S) -> SeparatedBy<W, S, T> {
+pub fn separated_by<W, S, T>(word: W, separator: S) -> SeparatedBy<W, S, T> {
     SeparatedBy {
         word,
         separator,
@@ -488,7 +559,7 @@ fn separated_by<W, S, T>(word: W, separator: S) -> SeparatedBy<W, S, T> {
 }
 
 #[derive(Clone, Copy)]
-struct SeparatedBy<W, S, T> {
+pub struct SeparatedBy<W, S, T> {
     word: W,
     separator: S,
     _token_type: marker::PhantomData<T>,
@@ -525,7 +596,7 @@ where
     }
 }
 
-fn enclosed_within<O, C, P, A, B, T>(
+pub fn enclosed_within<O, C, P, A, B, T>(
     open: O,
     close: C,
     body: P,
@@ -541,7 +612,7 @@ fn enclosed_within<O, C, P, A, B, T>(
 }
 
 #[derive(Clone, Copy)]
-struct EnclosedWithin<O, C, P, A, B, T> {
+pub struct EnclosedWithin<O, C, P, A, B, T> {
     open: O,
     close: C,
     body: P,
@@ -576,7 +647,7 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct OrElse<P, Q> {
+pub struct OrElse<P, Q> {
     lhs: P,
     rhs: Q,
 }
@@ -584,6 +655,7 @@ struct OrElse<P, Q> {
 impl<A, P, Q, T> Parsimonious<A> for OrElse<P, Q>
 where
     P: Parsimonious<A, Token = T>,
+    P::Token: Clone,
     Q: Parsimonious<A, Token = P::Token>,
 {
     type Token = P::Token;
@@ -598,7 +670,7 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct AndAlso<P, Q> {
+pub struct AndAlso<P, Q> {
     lhs: P,
     rhs: Q,
 }
@@ -902,7 +974,7 @@ mod tests {
     fn skips() {
         let input = &char_slice("Hi, mom");
         let was = string("Hi")
-            .skip_following(string(", "))
+            .skip_right(string(", "))
             .and_also(string("mom"))
             .parse(input);
         let expected = (char_slice("Hi"), char_slice("mom"));
@@ -921,237 +993,18 @@ mod tests {
         let input = &char_slice(" h");
         let ws = such_that(|c| char::is_whitespace(*c)).zero_or_more();
 
-        let was = ws.skip_preceeding(char('h')).parse(input);
+        let was = ws.skip_left(char('h')).parse(input);
         assert_eq!(was.emits(), Some('h'));
 
         let input = &char_slice(" [1, 2, 3, 4, 5]");
         let was = enclosed_within(
-            ws.skip_preceeding(char('[')),
-            ws.skip_preceeding(char(']')),
-            separated_by(ws.skip_preceeding(digit()), char(',').ignore()),
+            ws.skip_left(char('[')),
+            ws.skip_left(char(']')),
+            separated_by(ws.skip_left(digit()), char(',').ignore()),
         )
         .parse(input);
         let expected = vec!['1', '2', '3', '4', '5'];
 
-        assert_eq!(was.clone().emits(), Some(expected.clone()));
-        assert_eq!(
-            was.into_option(),
-            Some((expected, char_slice("").as_slice()))
-        );
-    }
-}
-
-#[cfg(test)]
-mod json_tests {
-    use super::{char, digit, enclosed_within, separated_by, string, such_that, Parsimonious};
-
-    #[derive(Clone, Debug, PartialEq)]
-    enum Value {
-        Scalar(ScalarValue),
-        Compound(CompoundValue),
-        Null,
-    }
-
-    impl Value {
-        fn parse(json_text: &str) -> Option<Self> {
-            compound()
-                .parse(&json_text.chars().collect::<Vec<_>>())
-                .emits()
-        }
-    }
-
-    #[derive(Clone, Debug, PartialEq)]
-    enum ScalarValue {
-        Number(f64),
-        Text(String),
-        Boolean(bool),
-    }
-
-    #[derive(Clone, Debug, PartialEq)]
-    enum CompoundValue {
-        Array(Vec<Value>),
-        Object(Vec<(String, Value)>),
-    }
-
-    fn ws() -> impl Parsimonious<(), Token = char> {
-        such_that(|c| char::is_whitespace(*c))
-            .zero_or_more()
-            .ignore()
-    }
-
-    fn null() -> impl Parsimonious<Value, Token = char> {
-        ws().skip_preceeding(string("null").map(|_| Value::Null))
-    }
-
-    fn number() -> impl Parsimonious<ScalarValue, Token = char> {
-        ws().skip_preceeding(
-            digit()
-                .or_else(char('.'))
-                .or_else(char('-'))
-                .one_or_more()
-                .map(|xs| xs.into_iter().collect::<String>())
-                .map(|s| s.parse::<f64>().unwrap())
-                .map(ScalarValue::Number),
-        )
-    }
-
-    fn text() -> impl Parsimonious<String, Token = char> {
-        ws().skip_preceeding(
-            enclosed_within(
-                char('"'),
-                char('"'),
-                such_that(|c| c != &'"').zero_or_more(),
-            )
-            .map(|xs| xs.into_iter().collect::<String>()),
-        )
-    }
-
-    fn boolean() -> impl Parsimonious<ScalarValue, Token = char> {
-        ws().skip_preceeding(
-            string("true")
-                .map(|_| true)
-                .or_else(string("false").map(|_| false))
-                .map(ScalarValue::Boolean),
-        )
-    }
-
-    fn scalar() -> impl Parsimonious<Value, Token = char> {
-        number()
-            .or_else(text().map(ScalarValue::Text))
-            .or_else(boolean())
-            .map(Value::Scalar)
-    }
-
-    fn array() -> impl Parsimonious<CompoundValue, Token = char> {
-        ws().skip_preceeding(enclosed_within(
-            char('['),
-            char(']'),
-            separated_by(value(), ws().skip_preceeding(char(',')).ignore()),
-        ))
-        .map(CompoundValue::Array)
-    }
-
-    fn object() -> impl Parsimonious<CompoundValue, Token = char> {
-        let field = text()
-            .skip_following(ws().skip_preceeding(char(':')))
-            .and_also(value());
-
-        ws().skip_preceeding(enclosed_within(
-            char('{'),
-            ws().skip_preceeding(char('}')),
-            separated_by(field, ws().skip_preceeding(char(',')).ignore()),
-        ))
-        .map(CompoundValue::Object)
-    }
-
-    fn compound() -> impl Parsimonious<Value, Token = char> {
-        array().or_else(object()).map(Value::Compound)
-    }
-
-    fn value() -> ParsimoniousValue {
-        ParsimoniousValue
-    }
-
-    #[derive(Clone)]
-    struct ParsimoniousValue;
-
-    impl Parsimonious<Value> for ParsimoniousValue {
-        type Token = char;
-
-        fn parse<'a>(self, input: &'a [Self::Token]) -> super::Parsed<'a, Value, Self::Token> {
-            let value = scalar().or_else(compound()).or_else(null());
-            value.parse(input)
-        }
-    }
-
-    fn char_slice(text: &str) -> Vec<char> {
-        text.chars().collect::<Vec<_>>()
-    }
-
-    #[test]
-    fn json_number() {
-        let input = &char_slice(" -427.17");
-        let was = value().parse(input);
-        let expected = Value::Scalar(ScalarValue::Number(-427.17));
-        assert_eq!(was.clone().emits(), Some(expected.clone()));
-        assert_eq!(
-            was.into_option(),
-            Some((expected, char_slice("").as_slice()))
-        )
-    }
-
-    #[test]
-    fn json_text() {
-        let input = &char_slice(r#" "Hi, mom""#);
-        let was = value().parse(input);
-        let expected = Value::Scalar(ScalarValue::Text("Hi, mom".into()));
-        assert_eq!(was.clone().emits(), Some(expected.clone()));
-        assert_eq!(
-            was.into_option(),
-            Some((expected, char_slice("").as_slice()))
-        );
-
-        let input = &char_slice(r#" """#);
-        let was = value().parse(input);
-        let expected = Value::Scalar(ScalarValue::Text("".into()));
-        assert_eq!(was.clone().emits(), Some(expected.clone()));
-        assert_eq!(
-            was.into_option(),
-            Some((expected, char_slice("").as_slice()))
-        )
-    }
-
-    #[test]
-    fn json_array() {
-        let input = &char_slice(r#"[427  , "Hi, mom"]"#);
-        let was = value().parse(input);
-        let expected = Value::Compound(CompoundValue::Array(vec![
-            Value::Scalar(ScalarValue::Number(427.0)),
-            Value::Scalar(ScalarValue::Text("Hi, mom".into())),
-        ]));
-        assert_eq!(was.clone().emits(), Some(expected.clone()));
-        assert_eq!(
-            was.into_option(),
-            Some((expected, char_slice("").as_slice()))
-        );
-    }
-
-    #[test]
-    fn json_object() {
-        let input = &char_slice(
-            r#" { 
-            "quux" : 427 ,   
-            "hi,"  : " mom"  
-            , "moms":[ 428  ,"mothers"],"yes": null
-            ,"no"    :true,
-            "empty_object" : { } ,"empty_array":[]
-        }"#,
-        );
-        let was = value().parse(input);
-        let expected = Value::Compound(CompoundValue::Object(vec![
-            ("quux".into(), Value::Scalar(ScalarValue::Number(427.0))),
-            (
-                "hi,".into(),
-                Value::Scalar(ScalarValue::Text(" mom".into())),
-            ),
-            (
-                "moms".into(),
-                Value::Compound(CompoundValue::Array(vec![
-                    Value::Scalar(ScalarValue::Number(428.0)),
-                    Value::Scalar(ScalarValue::Text("mothers".into())),
-                ])),
-            ),
-            ("yes".into(), Value::Null),
-            ("no".into(), Value::Scalar(ScalarValue::Boolean(true))),
-            (
-                "empty_object".into(),
-                Value::Compound(CompoundValue::Object(vec![])),
-            ),
-            (
-                "empty_array".into(),
-                Value::Compound(CompoundValue::Array(vec![])),
-            ),
-        ]));
         assert_eq!(was.clone().emits(), Some(expected.clone()));
         assert_eq!(
             was.into_option(),

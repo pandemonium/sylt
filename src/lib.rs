@@ -1,6 +1,12 @@
+#[macro_use]
+extern crate lazy_static;
+
+
 pub mod ast;
-pub mod intrinsics;
-pub mod interpreter;
-pub mod parser;
+pub mod runtime;
+//pub mod parser;
 //pub mod json;
 pub mod qombineur;
+//pub mod lexer;
+pub mod lexer;
+pub mod syntax;

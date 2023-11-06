@@ -1,6 +1,5 @@
 use std::collections;
-
-use crate::{ast, intrinsics};
+use crate::{ast, runtime::intrinsics};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {

@@ -1,5 +1,5 @@
+use crate::runtime::intrinsics::artithmetic::operator;
 use core::fmt;
-use crate::intrinsics::artithmetic::operator;
 
 #[derive(Debug)]
 pub struct Program {
@@ -282,6 +282,8 @@ pub enum Operator {
     Times,
     Divides,
     Modulo,
+    LessThan,
+    GreaterThan,
 }
 
 impl Operator {
@@ -292,6 +294,8 @@ impl Operator {
             Operator::Times => "times".into(),
             Operator::Divides => "divides".into(),
             Operator::Modulo => "modulo".into(),
+            Operator::LessThan => "less_than".into(),
+            Operator::GreaterThan => "greater_than".into(),
         }
     }
 
@@ -317,6 +321,8 @@ impl Operator {
             Self::Times,
             Self::Divides,
             Self::Modulo,
+            Self::LessThan,
+            Self::GreaterThan,
             // boolean algebra
             // comparisons
         ]
@@ -328,7 +334,7 @@ impl Operator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{interpreter, intrinsics::io};
+    use crate::runtime::{interpreter, intrinsics::io};
 
     #[test]
     fn show_hello_world_program() {
@@ -340,10 +346,12 @@ mod tests {
                 body: Block {
                     statements: vec![
                         Statement::Expression(Expression::Apply {
-                        symbol: Select::Intrinsic(Name::std("io", "print_line")),
-                        arguments: vec![Expression::Literal(Constant::Text("Hello, world".into()))],
+                            symbol: Select::Intrinsic(Name::std("io", "print_line")),
+                            arguments: vec![Expression::Literal(Constant::Text(
+                                "Hello, world".into(),
+                            ))],
                         }),
-                        Statement::Return(Expression::Literal(Constant::Int(1)))
+                        Statement::Return(Expression::Literal(Constant::Int(1))),
                     ],
                 },
             })],
@@ -361,7 +369,7 @@ mod tests {
         let interpreter = interpreter::Interpreter::new(ast, builtins);
         let result = interpreter.run();
 
-//        assert_ne!(result.clone(), result);
+        //        assert_ne!(result.clone(), result);
 
         println!("--------> {result:#?}");
     }
