@@ -7,7 +7,6 @@ use std::marker;
 
 pub mod types {
     use std::result;
-
     use crate::lexer;
 
     pub type Result<A> = result::Result<A, Error>;
@@ -465,6 +464,7 @@ mod tests {
         let input = &[
             T::Keyword(Keyword::Return),
             T::Literal(Literal::Integer(42)),
+            T::Separator(Separator::Semicolon),
         ];
         let was = super::statement().parse(input);
         assert_eq!(
@@ -483,6 +483,7 @@ mod tests {
             T::Literal(Literal::Integer(4)),
             T::Separator(Separator::Star),
             T::Literal(Literal::Integer(5)),
+            T::Separator(Separator::Semicolon),
         ];
         let was = super::statement().parse(input);
         assert_eq!(

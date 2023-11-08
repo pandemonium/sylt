@@ -1,4 +1,4 @@
-use std::{fmt, marker};
+use std::marker;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Parsed<'a, A, Token> {
@@ -58,6 +58,7 @@ pub trait Parsimonious<A>: Clone + Sized {
     // move Clone and Sized to impl
     type Token: Clone;
 
+    // Why does this take self and not &self?
     fn parse<'a>(self, input: &'a [Self::Token]) -> Parsed<'a, A, Self::Token>;
 
     fn parse_phrase<'a>(self, input: &'a [Self::Token]) -> Option<A> {
@@ -177,7 +178,7 @@ where
 
     fn parse<'a>(self, input: &'a [Self::Token]) -> Parsed<'a, (), Self::Token> {
         let Ignore(inner, ..) = self;
-        inner.map(|_| ()).parse(input)
+        inner.parse(input).map(|_| ())
     }
 }
 

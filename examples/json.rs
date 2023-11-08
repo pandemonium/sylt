@@ -8,7 +8,7 @@ enum Value {
 }
 
 impl Value {
-    fn parse(json_text: &str) -> Option<Self> {
+    pub fn parse(json_text: &str) -> Option<Self> {
         compound()
             .parse(&json_text.chars().collect::<Vec<_>>())
             .emits()
@@ -117,10 +117,6 @@ impl Parsimonious<Value> for ParsimoniousValue {
         let value = scalar().or_else(compound()).or_else(null());
         value.parse(input)
     }
-}
-
-fn char_slice(text: &str) -> Vec<char> {
-    text.chars().collect::<Vec<_>>()
 }
 
 fn main() {
