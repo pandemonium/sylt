@@ -1,7 +1,7 @@
 use crate::runtime::intrinsics::artithmetic::operator;
 use core::fmt;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Program {
     pub declarations: Vec<Declaration>,
     pub entry_point: Block,

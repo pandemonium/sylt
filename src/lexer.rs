@@ -1,12 +1,17 @@
-use crate::qombineur::*;
 use std::result;
+
+use crate::kombi::{ParseResult, ParseState, Parser};
+
+use self::types::Token;
 
 type Result<A> = result::Result<A, types::Error>;
 
 pub mod types {
+    use crate::kombi::Position;
+
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub enum Error {
-        Expected(),
+        Expected(Position),
         Eof,
     }
 
@@ -16,6 +21,25 @@ pub mod types {
         Identifier(Identifier),
         Keyword(Keyword),
         Literal(Literal),
+    }
+
+    impl Token {
+        fn token_type(&self) -> TokenType {
+            match self {
+                Token::Separator(..) => TokenType::Separator,
+                Token::Identifier(..) => TokenType::Identifier,
+                Token::Keyword(..) => TokenType::Keyword,
+                Token::Literal(..) => TokenType::Literal,
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum TokenType {
+        Separator,
+        Identifier,
+        Keyword,
+        Literal,
     }
 
     #[derive(Clone, Debug, PartialEq)]
@@ -287,14 +311,156 @@ pub mod parsers {
     }
 }
 
-// Positions? Should this borrow from the source?
-pub fn run(source: &[char]) -> Result<Vec<types::Token>> {
-    match parsers::token().one_or_more().parse(source) {
-        Parsed::Emits(toks, ..) => Ok(toks),
+mod kombi_parsers {
+    use super::types::{self, Identifier, Keyword, Literal, Separator, Token};
+    use crate::kombi::{enclosed_within, one_of, string, such_that, Parser, Positioned};
 
-        // What to do with this?
-        //   I have no error reporting.
-        Parsed::Diverges => Err(types::Error::Eof),
+    lazy_static! {
+        static ref LEGAL_IDENTIFIER_CHARS: Vec<char> = make_legal_identifier_chars();
+    }
+
+    fn make_legal_identifier_chars() -> Vec<char> {
+        let mut identifiers = vec![];
+        identifiers.extend('a'..='z');
+        identifiers.extend('A'..='Z');
+        identifiers.push('_');
+        identifiers
+    }
+
+    fn whitespace() -> impl Parser<In = char, Out = Vec<char>> {
+        such_that(|c| char::is_whitespace(*c))
+            .with_positions()
+            .zero_or_more()
+    }
+
+    fn lexeme<P>(produce: P) -> impl Parser<In = char, Out = P::Out>
+    where
+        P: Parser<In = char>,
+        P::Out: Clone,
+    {
+        whitespace().skip_left(produce)
+    }
+
+    fn separator() -> impl Parser<In = char, Out = Token> {
+        one_of(&types::SIMPLE_SEPARATOR_CHARS)
+            .filter_map(types::Separator::try_from_char)
+            .with_positions()
+            .map(Token::Separator)
+    }
+
+    fn compound_separator() -> impl Parser<In = char, Out = Token> {
+        let gte = string(">=").map(|_| Separator::GreaterThanOrEqual);
+        let lte = string("<=").map(|_| Separator::LessThanOrEqual);
+        let equals = string("==").map(|_| Separator::Equals);
+        let arrow = string("->").map(|_| Separator::ThinRightArrow);
+
+        gte.or_else(lte)
+            .or_else(equals)
+            .or_else(arrow)
+            .map(Token::Separator)
+    }
+
+    fn literal() -> impl Parser<In = char, Out = Token> {
+        floating_point()
+            .or_else(text())
+            .or_else(boolean())
+            .or_else(integer())
+            .map(Token::Literal)
+    }
+
+    fn integer() -> impl Parser<In = char, Out = Literal> {
+        digit()
+            .one_or_more()
+            .map(|image| {
+                image
+                    .iter()
+                    .collect::<String>()
+                    .parse::<i64>()
+                    .ok()
+                    .map(Literal::Integer)
+            })
+            .filter_map(|x| x.clone())
+    }
+
+    fn digit() -> impl Parser<In = char, Out = char> {
+        such_that(|c| char::is_digit(*c, 10)).with_positions()
+    }
+
+    fn boolean() -> impl Parser<In = char, Out = Literal> {
+        string("True")
+            .map(|_| Literal::Boolean(true))
+            .or_else(string("False").map(|_| Literal::Boolean(false)))
+    }
+
+    fn floating_point() -> impl Parser<In = char, Out = Literal> {
+        digit()
+            .one_or_more()
+            .and_also(char('.').skip_left(digit().one_or_more()))
+            .map(|(mut image, decimals)| {
+                image.push('.');
+                image.extend(decimals);
+
+                // Perhaps this FromStr + filter_map combo can be an abstraction?
+                image
+                    .iter()
+                    .collect::<String>()
+                    .parse::<f64>()
+                    .ok()
+                    .map(Literal::FloatingPoint)
+            })
+            .filter_map(|x| x.clone())
+    }
+
+    fn text() -> impl Parser<In = char, Out = Literal> {
+        enclosed_within(
+            char('"'),
+            char('"'),
+            such_that(|c| c != &'"').zero_or_more(),
+        )
+        .map(|xs| xs.into_iter().collect::<String>())
+        .map(Literal::Text)
+    }
+
+    fn char(c: char) -> impl Parser<In = char, Out = char> {
+        such_that(move |x| x == &c).with_positions()
+    }
+
+    fn identifier() -> impl Parser<In = char, Out = Identifier> {
+        one_of(&LEGAL_IDENTIFIER_CHARS)
+            .with_positions()
+            .one_or_more()
+            .map(|cs| cs.iter().collect::<String>())
+            .map(Identifier)
+    }
+
+    fn identifier_or_keyword() -> impl Parser<In = char, Out = Token> {
+        identifier().map(|id| {
+            Keyword::try_from(id.clone())
+                .map(Token::Keyword)
+                .unwrap_or_else(|| Token::Identifier(id))
+        })
+    }
+
+    pub fn token() -> impl Parser<In = char, Out = Token> {
+        lexeme(
+            literal()
+                .or_else(identifier_or_keyword())
+                .or_else(compound_separator())
+                .or_else(separator()),
+        )
+    }
+}
+
+pub fn run(input: &[char]) -> Result<Vec<Token>> {
+    let result = kombi_parsers::token()
+        .one_or_more()
+        .parse(ParseState::new(input));
+    let ParseResult { state, parsed } = result;
+    println!("Pos: {:?}", state.at);
+    if let Some(toks) = parsed {
+        Ok(toks)
+    } else {
+        Err(types::Error::Expected(state.at))
     }
 }
 
@@ -454,7 +620,7 @@ mod tests {
 
     #[test]
     fn compound_separators() {
-        let input = r#" fn foo() -> Int { while 2 >= 1 {} while 2 <= 1 {} } "#;
+        let input = "fn foo() -> Int {while 2 >= 1 {} while  2 <= 1 {}}";
         let was = run(&input.chars().collect::<Vec<_>>());
         assert_eq!(
             was.unwrap(),
@@ -463,30 +629,38 @@ mod tests {
                 T::Identifier(Identifier("foo".into())),
                 T::Separator(Separator::LeftParen),
                 T::Separator(Separator::RightParen),
-
                 T::Separator(Separator::ThinRightArrow),
-
                 T::Identifier(Identifier("Int".into())),
-
                 T::Separator(Separator::LeftBrace),
-
                 T::Keyword(Keyword::While),
                 T::Literal(Literal::Integer(2)),
                 T::Separator(Separator::GreaterThanOrEqual),
                 T::Literal(Literal::Integer(1)),
                 T::Separator(Separator::LeftBrace),
                 T::Separator(Separator::RightBrace),
-
                 T::Keyword(Keyword::While),
                 T::Literal(Literal::Integer(2)),
                 T::Separator(Separator::LessThanOrEqual),
                 T::Literal(Literal::Integer(1)),
                 T::Separator(Separator::LeftBrace),
                 T::Separator(Separator::RightBrace),
-
                 T::Separator(Separator::RightBrace),
-
             ]
         );
+    }
+
+    #[test]
+    fn spaces() {
+        let input = "
+
+
+
+        "
+        .chars()
+        .collect::<Vec<_>>();
+
+        for c in input {
+            print!("{},", c as i32)
+        }
     }
 }

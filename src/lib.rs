@@ -10,4 +10,5 @@ pub mod qombineur;
 pub mod kombi;
 //pub mod lexer;
 pub mod lexer;
-pub mod syntax;
+//pub mod syntax;
+pub mod syntaks;
