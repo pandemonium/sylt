@@ -1,5 +1,5 @@
+use crate::ast;
 use std::collections;
-use crate::{ast, runtime::intrinsics};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
@@ -58,7 +58,7 @@ impl<'a> ActivationFrame<'a> {
     fn resolve_intrinsic_function(
         &self,
         symbol: &ast::Name,
-    ) -> Result<&ast::IntrinsicFunctionDef, Error> {
+    ) -> Result<&ast::IntrinsicFunctionPrototype, Error> {
         if let Some(ast::Declaration::IntrinsicFunction(def)) = self.find_function(symbol) {
             Ok(def)
         } else {
@@ -81,35 +81,20 @@ impl<'a> ActivationFrame<'a> {
     }
 
     fn verify_return_value(&self, of_type: &ast::Type) -> Result<ast::Constant, Error> {
+        fn type_unifies(lhs: &ast::Type, rhs: &ast::Type) -> bool {
+            // Int <: Number, etc.
+            println!("lhs: {lhs:?}; rhs: {rhs:?}");
+            lhs == rhs || lhs == &ast::Type::Number && rhs.name().local_name() == "Int"
+        }
+
         if of_type != &ast::Type::Unit {
             self.return_value
                 .as_ref()
-                .filter(|value| &value.get_type() == of_type)
+                .filter(|value| type_unifies(of_type, &value.get_type()))
                 .ok_or_else(|| Error::ExpectedReturn(of_type.clone()))
                 .cloned()
         } else {
             Ok(ast::Constant::Void)
-        }
-    }
-
-    fn reduce(&self, e: &ast::Expression) -> Result<ast::Constant, Error> {
-        match e {
-            ast::Expression::Literal(constant) => Ok(constant.clone()),
-            ast::Expression::Variable(symbol) => self
-                .get_local_variable(symbol)
-                .cloned()
-                .ok_or_else(|| Error::UnresolvedSymbol(symbol.clone())),
-            ast::Expression::ApplyInfix { lhs, symbol, rhs } => {
-                let lhs = self.reduce(&lhs)?;
-                let rhs = self.reduce(&rhs)?;
-                self.reduce(&ast::Expression::Apply {
-                    symbol: symbol.select(),
-                    arguments: vec![ast::Expression::Literal(lhs), ast::Expression::Literal(rhs)],
-                })
-            }
-            ast::Expression::Apply { symbol, arguments } => {
-                self.apply_symbol(e, symbol, &arguments)
-            }
         }
     }
 
@@ -120,7 +105,13 @@ impl<'a> ActivationFrame<'a> {
         arguments: &[ast::Expression],
     ) -> Result<ast::Constant, Error> {
         match symbol {
-            ast::Select::Function(name) => self.apply_function(name, arguments),
+            ast::Select::Function(name) => match self.apply_function(name, arguments) {
+                Err(Error::UnresolvedSymbol(name)) => {
+                    let name = ast::Name::intrinsic(&name.name);
+                    self.apply_intrinsic(&name, arguments)
+                }
+                _otherwise => _otherwise,
+            },
             ast::Select::Intrinsic(name) => self.apply_intrinsic(name, arguments),
             ast::Select::Type(name) => Err(Error::ExpectedFunction(name.clone())),
         }
@@ -131,15 +122,14 @@ impl<'a> ActivationFrame<'a> {
         symbol: &ast::Name,
         arguments: &[ast::Expression],
     ) -> Result<ast::Constant, Error> {
-        let target = self.resolve_intrinsic_function(symbol)?;
+        let intrinsic = self.resolve_intrinsic_function(symbol)?;
         let arguments = arguments
             .iter()
-            // This has to be the same number.
-            .take(target.parameters.len())
+            .take(intrinsic.parameters.len())
             .map(|p| self.reduce(p))
             .collect::<Result<Vec<_>, Error>>()?;
 
-        intrinsics::invoke_intrinsic_function(target, &arguments)
+        intrinsic.dispatch.invoke(&arguments)
     }
 
     fn apply_function(
@@ -173,7 +163,27 @@ impl<'a> ActivationFrame<'a> {
         }
     }
 
-    // This could actually consume self. Right?
+    fn reduce(&self, e: &ast::Expression) -> Result<ast::Constant, Error> {
+        match e {
+            ast::Expression::Literal(constant) => Ok(constant.clone()),
+            ast::Expression::Variable(symbol) => self
+                .get_local_variable(symbol)
+                .cloned()
+                .ok_or_else(|| Error::UnresolvedSymbol(symbol.clone())),
+            ast::Expression::ApplyInfix { lhs, symbol, rhs } => {
+                let lhs = self.reduce(&lhs)?;
+                let rhs = self.reduce(&rhs)?;
+                self.reduce(&ast::Expression::Apply {
+                    symbol: symbol.select(),
+                    arguments: vec![ast::Expression::Literal(lhs), ast::Expression::Literal(rhs)],
+                })
+            }
+            ast::Expression::Apply { symbol, arguments } => {
+                self.apply_symbol(e, symbol, &arguments)
+            }
+        }
+    }
+
     fn interpret_block(&mut self, block: &ast::Block) -> Result<(), Error> {
         for statement in &block.statements {
             match statement {

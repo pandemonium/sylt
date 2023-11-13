@@ -14,7 +14,6 @@ impl Position {
     }
 
     pub fn carriage_return(self) -> Self {
-        println!("Carriage return");
         Self {
             line: self.line + 1,
             column: 1,
@@ -23,7 +22,6 @@ impl Position {
     }
 
     pub fn line_feed(self) -> Self {
-        println!("Line feed");
         Self {
             line: self.line + 1,
             column: 1,

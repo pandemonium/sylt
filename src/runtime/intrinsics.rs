@@ -1,21 +1,31 @@
-use artithmetic::operator;
 use crate::{ast, runtime::interpreter};
+use core::fmt;
+use std::collections;
 
-pub fn invoke_intrinsic_function(
-    function: &ast::IntrinsicFunctionDef,
-    arguments: &[ast::Constant],
-) -> Result<ast::Constant, interpreter::Error> {
-    // Really find a way to store a function parameter
-    if operator::in_prefix(&function.name()) {
-        Ok(operator::apply_by_name(
-            function.name().local_name(),
-            arguments,
-        )?)
-    } else if io::in_prefix(&function.name()) {
-        Ok(io::apply_by_name(function.name().local_name(), arguments)?)
-    } else {
-        todo!()
+pub trait IntrinsicProxy: fmt::Debug {
+    fn invoke(&self, arguments: &[ast::Constant]) -> Result<ast::Constant, interpreter::Error>;
+}
+
+impl IntrinsicProxy for ast::Operator {
+    fn invoke(&self, arguments: &[ast::Constant]) -> Result<ast::Constant, interpreter::Error> {
+        if let &[lhs, rhs] = &arguments {
+            artithmetic::operator::apply(lhs, &self, rhs).ok_or_else(|| {
+                interpreter::Error::ExpectedArguments(self.name().clone(), self.parameters())
+            })
+        } else {
+            Err(interpreter::Error::ExpectedArguments(
+                self.name().clone(),
+                self.parameters(),
+            ))
+        }
     }
+}
+
+pub fn initialize() -> collections::HashMap<ast::Name, ast::Declaration> {
+    let mut symbols = artithmetic::operator::declarations();
+    symbols.extend(io::declarations());
+
+    symbols
 }
 
 pub mod artithmetic {
@@ -26,46 +36,10 @@ pub mod artithmetic {
                 Constant::{self, *},
                 Operator::{self, *},
             },
-            runtime::interpreter::{self, Error},
+            runtime::interpreter,
         };
 
-        static PREFIX: &[&str] = &["builtins", "arithmetic", "operator"];
-
-        pub fn in_prefix(name: &ast::Name) -> bool {
-            PREFIX == name.scope_path
-        }
-
-        pub fn qualified_name(local_name: &str) -> ast::Name {
-            ast::Name::intrinsic("arithmetic", "operator", local_name)
-        }
-
-        pub fn apply_by_name(
-            symbol: &str,
-            arguments: &[Constant],
-        ) -> Result<Constant, interpreter::Error> {
-            let op = Operator::resolve(symbol)
-                .ok_or_else(|| interpreter::Error::UnresolvedSymbol(qualified_name(symbol)))?;
-
-            apply_operator(op, arguments)
-        }
-
-        fn apply_operator(
-            op: Operator,
-            arguments: &[Constant],
-        ) -> Result<Constant, interpreter::Error> {
-            if let &[lhs, rhs] = &arguments {
-                self::apply(lhs, &op, rhs).ok_or_else(|| {
-                    Error::ExpectedArguments(op.select().name().clone(), op.parameters())
-                })
-            } else {
-                Err(interpreter::Error::ExpectedArguments(
-                    op.select().name().clone(),
-                    op.parameters(),
-                ))
-            }
-        }
-
-        fn apply(lhs: &Constant, op: &Operator, rhs: &Constant) -> Option<Constant> {
+        pub fn apply(lhs: &Constant, op: &Operator, rhs: &Constant) -> Option<Constant> {
             match (lhs, op, rhs) {
                 (Float(lhs), Plus, Float(rhs)) => Some(Float(lhs + rhs)),
                 (Int(lhs), Plus, Int(rhs)) => Some(Int(lhs + rhs)),
@@ -86,14 +60,19 @@ pub mod artithmetic {
             }
         }
 
-        fn make_intrinsic_function(op: &Operator) -> ast::IntrinsicFunctionDef {
-            ast::IntrinsicFunctionDef::new(op.select().name(), &op.parameters(), op.return_type())
+        fn make_intrinsic_function(op: &Operator) -> ast::IntrinsicFunctionPrototype {
+            ast::IntrinsicFunctionPrototype::new(
+                &op.name(),
+                &op.parameters(),
+                op.return_type(),
+                op.clone(),
+            )
         }
 
         pub fn declarations() -> interpreter::SymbolTable {
             [Plus, Minus, Times, Divides, Modulo]
                 .iter()
-                .map(|x| make_intrinsic_function(x))
+                .map(make_intrinsic_function)
                 .map(|x| (x.name.clone(), ast::Declaration::IntrinsicFunction(x)))
                 .collect()
         }
@@ -102,16 +81,6 @@ pub mod artithmetic {
 
 mod text {
     use crate::{ast, runtime::interpreter};
-
-    static PREFIX: &[&str] = &["builtins", "text"];
-
-    pub fn in_prefix(name: &ast::Name) -> bool {
-        PREFIX == name.scope_path
-    }
-
-    pub fn qualified_name(local_name: &str) -> ast::Name {
-        ast::Name::intrinsic("arithmetic", "operator", local_name)
-    }
 
     pub fn _apply_by_name(
         _symbol: &str,
@@ -126,43 +95,43 @@ mod text {
 }
 
 pub mod io {
+    use super::IntrinsicProxy;
     use crate::{ast, runtime::interpreter};
 
-    static PREFIX: &[&str] = &["std", "io"];
+    #[derive(Debug)]
+    pub struct PrintLineStub;
 
-    pub fn in_prefix(name: &ast::Name) -> bool {
-        PREFIX == name.scope_path
-    }
-
-    pub fn qualified_name(local_name: &str) -> ast::Name {
-        ast::Name::std("io", local_name)
-    }
-
-    pub fn apply_by_name(
-        symbol: &str,
-        arguments: &[ast::Constant],
-    ) -> Result<ast::Constant, interpreter::Error> {
-        match symbol {
-            "print_line" if arguments.len() == 1 => {
-                print_line(arguments[0].clone());
-                Ok(ast::Constant::Void)
+    impl IntrinsicProxy for PrintLineStub {
+        // I shouldn't be passing around ast values, really. There should be an
+        //   runtime::Value for this.
+        fn invoke(&self, arguments: &[ast::Constant]) -> Result<ast::Constant, interpreter::Error> {
+            match arguments {
+                [line] => {
+                    print_line(line.clone());
+                    Ok(ast::Constant::Void)
+                }
+                _otherwise => Err(interpreter::Error::ExpectedArguments(
+                    ast::Name::simple("print_line"),
+                    vec![ast::Parameter::new(
+                        "line",
+                        ast::Type::named(&ast::Name::simple("Text")),
+                    )],
+                )),
             }
-            otherwise => Err(interpreter::Error::UnresolvedSymbol(qualified_name(
-                otherwise,
-            ))),
         }
     }
 
     pub fn declarations() -> interpreter::SymbolTable {
         // Perhaps this can be parsed later on
         // "fn print_line(line: <What here>) -> unit" => ast::InstrinsicFunctionDef
-        let functions = vec![ast::IntrinsicFunctionDef::new(
-            &qualified_name("print_line"),
+        let functions = vec![ast::IntrinsicFunctionPrototype::new(
+            &ast::Name::intrinsic("print_line"),
             &[ast::Parameter::new(
                 "line",
-                ast::Type::simple(&ast::Name::simple("string")),
+                ast::Type::named(&ast::Name::simple("Text")),
             )],
             ast::Type::Unit,
+            PrintLineStub,
         )];
 
         functions

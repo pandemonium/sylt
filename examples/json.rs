@@ -1,4 +1,4 @@
-use sylt::qombineur::{self, char, enclosed_within, separated_by, Parsed, Parsimonious, string, such_that, digit};
+use sylt::kombi::{ParseState, Parser, char, such_that, string, enclosed_within, separated_by};
 
 #[derive(Clone, Debug, PartialEq)]
 enum Value {
@@ -10,8 +10,8 @@ enum Value {
 impl Value {
     pub fn parse(json_text: &str) -> Option<Self> {
         compound()
-            .parse(&json_text.chars().collect::<Vec<_>>())
-            .emits()
+            .parse(ParseState::new(&json_text.chars().collect::<Vec<_>>()))
+            .into_option()
     }
 }
 
@@ -28,17 +28,21 @@ enum CompoundValue {
     Object(Vec<(String, Value)>),
 }
 
-fn ws() -> impl Parsimonious<(), Token = char> {
+fn ws() -> impl Parser<Out = (), In = char> {
     such_that(|c| char::is_whitespace(*c))
         .zero_or_more()
-        .ignore()
+        .map(|_| ())
 }
 
-fn null() -> impl Parsimonious<Value, Token = char> {
+fn null() -> impl Parser<Out = Value, In = char> {
     ws().skip_left(string("null").map(|_| Value::Null))
 }
 
-fn number() -> impl Parsimonious<ScalarValue, Token = char> {
+fn digit() -> impl Parser<In = char, Out = char> {
+    such_that(|c| char::is_digit(*c, 10))
+}
+
+fn number() -> impl Parser<Out = ScalarValue, In = char> {
     ws().skip_left(
         digit()
             .or_else(char('.'))
@@ -50,7 +54,7 @@ fn number() -> impl Parsimonious<ScalarValue, Token = char> {
     )
 }
 
-fn text() -> impl Parsimonious<String, Token = char> {
+fn text() -> impl Parser<Out = String, In = char> {
     ws().skip_left(
         enclosed_within(
             char('"'),
@@ -61,7 +65,7 @@ fn text() -> impl Parsimonious<String, Token = char> {
     )
 }
 
-fn boolean() -> impl Parsimonious<ScalarValue, Token = char> {
+fn boolean() -> impl Parser<Out = ScalarValue, In = char> {
     ws().skip_left(
         string("true")
             .map(|_| true)
@@ -70,23 +74,23 @@ fn boolean() -> impl Parsimonious<ScalarValue, Token = char> {
     )
 }
 
-fn scalar() -> impl Parsimonious<Value, Token = char> {
+fn scalar() -> impl Parser<Out = Value, In = char> {
     number()
         .or_else(text().map(ScalarValue::Text))
         .or_else(boolean())
         .map(Value::Scalar)
 }
 
-fn array() -> impl Parsimonious<CompoundValue, Token = char> {
+fn array() -> impl Parser<Out = CompoundValue, In = char> {
     ws().skip_left(enclosed_within(
         char('['),
         char(']'),
-        separated_by(value(), ws().skip_left(char(',')).ignore()),
+        separated_by(value(), ws().skip_left(char(','))),
     ))
     .map(CompoundValue::Array)
 }
 
-fn object() -> impl Parsimonious<CompoundValue, Token = char> {
+fn object() -> impl Parser<Out = CompoundValue, In = char> {
     let field = text()
         .skip_right(ws().skip_left(char(':')))
         .and_also(value());
@@ -94,12 +98,12 @@ fn object() -> impl Parsimonious<CompoundValue, Token = char> {
     ws().skip_left(enclosed_within(
         char('{'),
         ws().skip_left(char('}')),
-        separated_by(field, ws().skip_left(char(',')).ignore()),
+        separated_by(field, ws().skip_left(char(','))),
     ))
     .map(CompoundValue::Object)
 }
 
-fn compound() -> impl Parsimonious<Value, Token = char> {
+fn compound() -> impl Parser<Out = Value, In = char> {
     array().or_else(object()).map(Value::Compound)
 }
 
@@ -110,10 +114,14 @@ fn value() -> ParsimoniousValue {
 #[derive(Clone)]
 struct ParsimoniousValue;
 
-impl Parsimonious<Value> for ParsimoniousValue {
-    type Token = char;
+impl Parser for ParsimoniousValue {
+    type In = char;
+    type Out = Value;
 
-    fn parse<'a>(self, input: &'a [Self::Token]) -> Parsed<'a, Value, Self::Token> {
+    fn parse<'a>(
+        self,
+        input: sylt::kombi::ParseState<'a, Self::In>,
+    ) -> sylt::kombi::ParseResult<'a, Self::In, Self::Out> {
         let value = scalar().or_else(compound()).or_else(null());
         value.parse(input)
     }

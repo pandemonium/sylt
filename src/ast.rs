@@ -1,5 +1,6 @@
-use crate::runtime::intrinsics::artithmetic::operator;
+use crate::runtime::intrinsics;
 use core::fmt;
+use std::rc;
 
 #[derive(Clone, Debug)]
 pub struct Program {
@@ -10,7 +11,7 @@ pub struct Program {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Declaration {
     Function(FunctionDef),
-    IntrinsicFunction(IntrinsicFunctionDef),
+    IntrinsicFunction(IntrinsicFunctionPrototype),
     Operator(Operator),
     Static {
         name: Name,
@@ -24,7 +25,7 @@ impl Declaration {
         match self {
             Declaration::Function(def) => def.name().clone(),
             Declaration::IntrinsicFunction(def) => def.name().clone(),
-            Declaration::Operator(def) => def.select().name().clone(),
+            Declaration::Operator(def) => def.name(),
             Declaration::Static { name, .. } => name.clone(),
         }
     }
@@ -37,7 +38,7 @@ impl Declaration {
         }
     }
 
-    pub fn as_intrinsic(&self) -> Option<&IntrinsicFunctionDef> {
+    pub fn as_intrinsic(&self) -> Option<&IntrinsicFunctionPrototype> {
         // Is there a more ergonomic version of this pattern?
         if let Self::IntrinsicFunction(def) = self {
             Some(def)
@@ -47,19 +48,35 @@ impl Declaration {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct IntrinsicFunctionDef {
+#[derive(Clone, Debug)]
+pub struct IntrinsicFunctionPrototype {
     pub name: Name,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
+
+    // This precludes PartialEq - it has to go somewhere else
+    pub dispatch: rc::Rc<dyn intrinsics::IntrinsicProxy>,
 }
 
-impl IntrinsicFunctionDef {
-    pub fn new(name: &Name, parameters: &[Parameter], return_type: Type) -> Self {
+impl PartialEq for IntrinsicFunctionPrototype {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.parameters == other.parameters
+            && self.return_type == other.return_type
+//            && self.call_proxy == other.call_proxy
+    }
+}
+
+impl IntrinsicFunctionPrototype {
+    pub fn new<F>(name: &Name, parameters: &[Parameter], return_type: Type, target: F) -> Self
+    where
+        F: intrinsics::IntrinsicProxy + 'static,
+    {
         Self {
             name: name.clone(),
             parameters: parameters.into(),
             return_type,
+            dispatch: rc::Rc::new(target),
         }
     }
 
@@ -126,6 +143,7 @@ pub enum Expression {
     Literal(Constant),
     Variable(Name),
     ApplyInfix {
+        // This isn't necessary, really.
         lhs: Box<Expression>,
         symbol: Operator,
         rhs: Box<Expression>,
@@ -136,19 +154,24 @@ pub enum Expression {
     },
 }
 
-// I don't like these
-// It should be: type Name = Simple of string | Compound of string * Name;
+#[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+pub enum Module {
+    User,
+    Intrinsic,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct Name {
-    pub scope_path: Vec<String>,
+    pub module: Module,
     pub name: String,
 }
 
 impl Name {
     pub fn qualified_name(&self) -> String {
-        let mut scope_path = self.scope_path.join("::");
-        scope_path.push_str(&self.name);
-        scope_path
+        match self.module {
+            Module::User => self.name.clone(),
+            Module::Intrinsic => format!("builtin::{}", self.name),
+        }
     }
 
     pub fn local_name(&self) -> &str {
@@ -157,21 +180,14 @@ impl Name {
 
     pub fn simple(name: &str) -> Self {
         Self {
-            scope_path: vec![],
+            module: Module::User,
             name: name.into(),
         }
     }
 
-    pub fn intrinsic(context: &str, module: &str, name: &str) -> Self {
+    pub fn intrinsic(name: &str) -> Self {
         Self {
-            scope_path: vec!["builtins".into(), context.into(), module.into()],
-            name: name.into(),
-        }
-    }
-
-    pub fn std(module: &str, name: &str) -> Self {
-        Self {
-            scope_path: vec!["std".into(), module.into()],
+            module: Module::Intrinsic,
             name: name.into(),
         }
     }
@@ -212,19 +228,19 @@ impl Select {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
-    Simple(Name),
+    Named(Name),
     Number,
     Unit,
 }
 
 impl Type {
-    pub fn simple(name: &Name) -> Self {
-        Type::Simple(name.clone())
+    pub fn named(name: &Name) -> Self {
+        Type::Named(name.clone())
     }
 
     pub fn name(&self) -> Name {
         match self {
-            Self::Simple(name) => name.clone(),
+            Self::Named(name) => name.clone(),
             Self::Number => Name::simple("{number}"),
             Self::Unit => Name::simple("unit"),
         }
@@ -251,15 +267,15 @@ impl Constant {
 
     pub fn get_type(&self) -> Type {
         fn qualified_type_name(name: &str) -> Type {
-            Type::simple(&Name::simple(name))
+            Type::named(&Name::intrinsic(name))
         }
 
         match self {
-            Constant::Boolean(..) => qualified_type_name("boolean"),
-            Constant::Int(..) => qualified_type_name("int"),
-            Constant::Float(..) => qualified_type_name("float"),
-            Constant::Text(..) => qualified_type_name("text"),
-            Constant::Void => qualified_type_name("unit"),
+            Constant::Boolean(..) => qualified_type_name("Boolean"),
+            Constant::Int(..) => qualified_type_name("Int"),
+            Constant::Float(..) => qualified_type_name("Float"),
+            Constant::Text(..) => qualified_type_name("Text"),
+            Constant::Void => qualified_type_name("Unit"),
         }
     }
 }
@@ -290,22 +306,26 @@ pub enum Operator {
 }
 
 impl Operator {
-    pub fn local_name(&self) -> String {
+    pub fn name(&self) -> Name {
         match self {
-            Operator::Plus => "plus".into(),
-            Operator::Minus => "minus".into(),
-            Operator::Times => "times".into(),
-            Operator::Divides => "divides".into(),
-            Operator::Modulo => "modulo".into(),
-            Operator::LessThan => "less_than".into(),
-            Operator::LessThanOrEqual => "less_than_or_equal".into(),
-            Operator::GreaterThan => "greater_than".into(),
-            Operator::Equals => "equals".into(),
+            Operator::Plus => Name::intrinsic("plus"),
+            Operator::Minus => Name::intrinsic("minus"),
+            Operator::Times => Name::intrinsic("times"),
+            Operator::Divides => Name::intrinsic("divides"),
+            Operator::Modulo => Name::intrinsic("modulo"),
+            Operator::LessThan => Name::intrinsic("less_than"),
+            Operator::LessThanOrEqual => Name::intrinsic("less_than_or_equal"),
+            Operator::GreaterThan => Name::intrinsic("greater_than"),
+            Operator::Equals => Name::intrinsic("equals"),
         }
     }
 
+    pub fn local_name(&self) -> String {
+        self.name().name.clone()
+    }
+
     pub fn select(&self) -> Select {
-        Select::Intrinsic(operator::qualified_name(&self.local_name()))
+        Select::Intrinsic(self.name())
     }
 
     pub fn parameters(&self) -> Vec<Parameter> {
@@ -340,7 +360,7 @@ impl Operator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{interpreter, intrinsics::io};
+    use crate::runtime::{interpreter, intrinsics::{io, artithmetic::operator}};
 
     #[test]
     fn show_hello_world_program() {
@@ -352,7 +372,7 @@ mod tests {
                 body: Block {
                     statements: vec![
                         Statement::Expression(Expression::Apply {
-                            symbol: Select::Intrinsic(Name::std("io", "print_line")),
+                            symbol: Select::Intrinsic(Name::intrinsic("print_line")),
                             arguments: vec![Expression::Literal(Constant::Text(
                                 "Hello, world".into(),
                             ))],
