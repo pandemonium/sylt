@@ -53,6 +53,10 @@ let bind (f : 'a -> Parser<'b, 't>) (p : Parser<'a, 't>) : Parser<'a, 't> =
 
 This is not an F# project but looking at this, even as someone not quite familiar with F#, other MLs, or functional programming in general, it is apparent that there's a whole lot of functioning going on here. This is not how all F# looks, I merely chose it as the vessel to carry the functional approach to solving problems. Lots of "care" is taken to hide some of the parameter passing using currying because in doing so, the reader might focus more on the fact that these are abstract types expressing concepts, that we manipulate using combinators such that their final form might become a JSON parser, for instance. Functions are values.
 
+In Rust, I started out trying to mimic this approach but doing so without the power of currying and with the added requirements surrounding closures, I realised that this is "Writing Haskell in Rust" and that I must find the appropriate way of expressing these concepts idiomatically.
+
+Instead of having a function be the atom, I opted for plain values and a Parser trait to bestow it with the needed parsing and combinational semantics.
+
 ```Rust
 // I have successfully parsed a thing, please emit a thing. Unless I diverged in attempting to do so.
 enum ParseResult<'a, A, T> {
@@ -124,3 +128,25 @@ let parser = token(|x| x % 2 == 0).map(|x| format!("I have parsed {}", x));
 
 ```
 
+The project has an example JSON parser apart from the machinery to make Sylt work.
+
+This is the one actual code sample of the Sylt language at this point:
+
+```Rust
+    fn fibonacci(n: Int) -> Int {
+        if n == 0 {
+            return 0;
+        } else {
+            if n == 1 {
+                return 1;
+            } else {
+                return fibonacci(n - 1) + fibonacci(n - 2);
+            }
+        }
+    }
+
+    {
+        return fibonacci(35);
+    }
+
+```
