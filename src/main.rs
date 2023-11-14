@@ -1,27 +1,9 @@
 use sylt::{
     ast::*,
     lexer,
-    runtime::{interpreter::{self, Interpreter}, intrinsics},
-    syntax,
+    runtime::{interpreter::Interpreter, intrinsics},
+    syntax, Error,
 };
-
-#[derive(Debug)]
-enum Error {
-    CompileTime(syntax::types::Error),
-    Runtime(interpreter::Error),
-}
-
-impl From<syntax::types::Error> for Error {
-    fn from(value: syntax::types::Error) -> Self {
-        Error::CompileTime(value)
-    }
-}
-
-impl From<interpreter::Error> for Error {
-    fn from(value: interpreter::Error) -> Self {
-        Error::Runtime(value)
-    }
-}
 
 fn main() -> Result<(), Error> {
     let source = r#"
@@ -74,9 +56,31 @@ fn other_stuff(bunk: Text) -> Int {
         print_line("A quick brown fox?");
     }
 
+    if trenger_retina and saab >= 27 {
+        print_line("Pain?");
+    }
+
     return arith;
 }
     
+    "#;
+
+    let source = r#"
+    fn fibonacci(n: Int) -> Int {
+        if n == 0 {
+            return 0;
+        } else {
+            if n == 1 {
+                return 1;
+            } else {
+                return fibonacci(n - 1) + fibonacci(n - 2);
+            }
+        }
+    }
+
+    {
+        return fibonacci(35);
+    }
     "#;
 
     let program = syntax::analyze(&source.chars().collect::<Vec<_>>())?;

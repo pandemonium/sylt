@@ -46,11 +46,18 @@ pub mod types {
 pub fn analyze(input: &[char]) -> types::Result<ast::Program> {
     let toks = lexer::run(input)?;
     let ParseResult { state, parsed } = program_declaration().parse(ParseState::new(&toks));
-
     parsed.ok_or_else(|| types::Error::Parse(state.into()))
 }
 
-#[derive(Clone, Copy)]
+pub fn parse_expression(input: &str) -> types::Result<ast::Expression> {
+    let input = input.chars().collect::<Vec<_>>();
+    let input = lexer::run(&input)?;
+    let toks = ParseState::new(&input);
+    let ParseResult { state, parsed } = expression().parse(toks);
+    parsed.ok_or_else(|| types::Error::Parse(state.into()))
+}
+
+#[derive(Clone, Copy, Debug)]
 struct Thunk<A>(marker::PhantomData<A>);
 
 fn literal() -> impl Parser<In = lex::Token, Out = ast::Expression> {
@@ -91,45 +98,77 @@ impl Parser for Thunk<ast::Expression> {
     }
 }
 
-fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
-    let plus = separator(lex::Separator::Plus).map(|_| ast::Operator::Plus);
-    let minus = separator(lex::Separator::Minus).map(|_| ast::Operator::Minus);
-    let operator = plus.or_else(minus);
-
-    let sequence = operator.and_also(infix_term()).zero_or_more();
-    infix_term().and_also(sequence).map(|(lhs, rhss)| {
-        rhss.into_iter()
-            .fold(lhs, |lhs, (symbol, rhs)| ast::Expression::ApplyInfix {
-                lhs: Box::new(lhs),
-                symbol,
-                rhs: Box::new(rhs),
-            })
-    })
-}
-
-fn infix_term() -> impl Parser<In = lex::Token, Out = ast::Expression> {
-    let times = separator(lex::Separator::Star).map(|_| ast::Operator::Times);
-    let divides = separator(lex::Separator::Slash).map(|_| ast::Operator::Divides);
-    let operator = times.or_else(divides);
-
-    let sequence = operator.and_also(infix_factor()).zero_or_more();
-    infix_factor().and_also(sequence).map(|(lhs, rhss)| {
-        rhss.into_iter()
-            .fold(lhs, |lhs, (symbol, rhs)| ast::Expression::ApplyInfix {
-                lhs: Box::new(lhs),
-                symbol,
-                rhs: Box::new(rhs),
-            })
-    })
-}
-
-fn infix_factor() -> impl Parser<In = lex::Token, Out = ast::Expression> {
+fn expression_core() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     enclosed_within(
         separator(lex::Separator::LeftParen),
         separator(lex::Separator::RightParen),
         expression(),
     )
     .or_else(expression_rhs())
+}
+
+fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
+    let level_1 = expect!(
+        lex::Token::Separator(lex::Separator::Star) => ast::Operator::Times,
+        lex::Token::Separator(lex::Separator::Slash) => ast::Operator::Divides,
+        lex::Token::Separator(lex::Separator::Percent) => ast::Operator::Modulo
+    );
+
+    let level_2 = expect!(
+        lex::Token::Separator(lex::Separator::Plus) => ast::Operator::Plus,
+        lex::Token::Separator(lex::Separator::Minus) => ast::Operator::Minus
+    );
+
+    let level_3 = expect!(
+        lex::Token::Separator(lex::Separator::LessThan) => ast::Operator::LT,
+        lex::Token::Separator(lex::Separator::GreaterThan) => ast::Operator::GT,
+        lex::Token::Separator(lex::Separator::LessThanOrEqual) => ast::Operator::LTE,
+        lex::Token::Separator(lex::Separator::GreaterThanOrEqual) => ast::Operator::GTE
+    );
+
+    let level_4 = expect!(
+        lex::Token::Separator(lex::Separator::Equals) => ast::Operator::Equals,
+        lex::Token::Separator(lex::Separator::NotEqual) => ast::Operator::NotEqual
+    );
+
+    let level_5 = expect!(
+        lex::Token::Keyword(lex::Keyword::And) => ast::Operator::And,
+        lex::Token::Keyword(lex::Keyword::Or) => ast::Operator::Or
+    );
+
+    let level_6 = expect!(
+        lex::Token::Keyword(lex::Keyword::Or) => ast::Operator::Or
+    );
+
+    let level_0 = expression_core();
+    let level_1 = infix_level(level_1, level_0);
+    let level_2 = infix_level(level_2, level_1);
+    let level_3 = infix_level(level_3, level_2);
+    let level_4 = infix_level(level_4, level_3);
+    let level_5 = infix_level(level_5, level_4);
+    //    let level_6 = infix_level(level_6, level_5);
+
+    level_5
+}
+
+#[inline]
+fn infix_level<O, L>(
+    operator: O,
+    super_level: L,
+) -> impl Parser<In = lex::Token, Out = ast::Expression>
+where
+    O: Parser<In = lex::Token, Out = ast::Operator>,
+    L: Parser<In = O::In, Out = ast::Expression>,
+{
+    let sequence = operator.and_also(super_level.clone()).zero_or_more();
+    super_level.and_also(sequence).map(|(lhs, rhss)| {
+        rhss.into_iter()
+            .fold(lhs, |lhs, (symbol, rhs)| ast::Expression::ApplyInfix {
+                lhs: Box::new(lhs),
+                symbol,
+                rhs: Box::new(rhs),
+            })
+    })
 }
 
 fn expression_rhs() -> impl Parser<In = lex::Token, Out = ast::Expression> {
@@ -265,8 +304,8 @@ fn program_declaration() -> impl Parser<In = lex::Token, Out = ast::Program> {
     function_declaration()
         .zero_or_more()
         .and_also(block())
-        .map(|(definitions, entry_point)| ast::Program {
-            declarations: definitions,
+        .map(|(declarations, entry_point)| ast::Program {
+            declarations,
             entry_point,
         })
 }
@@ -517,6 +556,40 @@ mod tests {
 
     #[test]
     fn infix_expressions() {
+        // 1 < 2 and 3 + 4 >= 5
+        let input = &[
+            T::Literal(Literal::Integer(1)),
+            T::Separator(Separator::LessThan),
+            T::Literal(Literal::Integer(2)),
+            T::Keyword(Keyword::And),
+            T::Literal(Literal::Integer(3)),
+            T::Separator(Separator::Plus),
+            T::Literal(Literal::Integer(4)),
+            T::Separator(Separator::GreaterThanOrEqual),
+            T::Literal(Literal::Integer(5)),
+        ];
+        let was = super::expression().parse(ParseState::new(input));
+        assert_eq!(
+            was.into_option(),
+            Some(Expression::ApplyInfix {
+                lhs: Box::new(Expression::ApplyInfix {
+                    lhs: Box::new(Expression::Literal(Constant::Int(1))),
+                    symbol: Operator::LT,
+                    rhs: Box::new(Expression::Literal(Constant::Int(2)))
+                }),
+                symbol: Operator::And,
+                rhs: Box::new(Expression::ApplyInfix {
+                    lhs: Box::new(Expression::ApplyInfix {
+                        lhs: Box::new(Expression::Literal(Constant::Int(3))),
+                        symbol: Operator::Plus,
+                        rhs: Box::new(Expression::Literal(Constant::Int(4)))
+                    }),
+                    symbol: Operator::GTE,
+                    rhs: Box::new(Expression::Literal(Constant::Int(5)))
+                })
+            })
+        );
+
         //        let input = r#"1+2+3-4*5"#;
         let input = &[
             T::Literal(Literal::Integer(1)),

@@ -1,3 +1,4 @@
+use core::fmt;
 use std::marker;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -219,7 +220,7 @@ pub trait Parser: Clone {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Positions<P>(P);
 
 pub trait Positioned<P> {
@@ -265,7 +266,7 @@ pub fn take<T>(length: usize) -> Take<T> {
     Take(length, marker::PhantomData)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Take<T>(usize, marker::PhantomData<T>);
 
 impl<T> Parser for Take<T>
@@ -287,7 +288,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Map<F, P, B>(F, P, marker::PhantomData<B>);
 
 impl<F, P, B> Parser for Map<F, P, B>
@@ -305,7 +306,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FlatMap<F, P, Q>(F, P, marker::PhantomData<Q>);
 
 impl<F, P, Q> Parser for FlatMap<F, P, Q>
@@ -327,7 +328,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FilterMap<F, P, B>(F, P, marker::PhantomData<B>);
 
 impl<F, P, B> Parser for FilterMap<F, P, B>
@@ -353,7 +354,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AndAlso<P, Q>(P, Q);
 
 impl<P, Q> Parser for AndAlso<P, Q>
@@ -370,7 +371,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OrElse<P, Q>(P, Q);
 
 impl<P, Q> Parser for OrElse<P, Q>
@@ -403,7 +404,7 @@ where
     SuchThat(f, marker::PhantomData)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SuchThat<F, T>(F, marker::PhantomData<T>);
 
 impl<F, T> Parser for SuchThat<F, T>
@@ -427,7 +428,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct When<P, F>(P, F);
 
 impl<P, F> Parser for When<P, F>
@@ -449,7 +450,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ZeroOrMore<P>(P);
 
 impl<P> Parser for ZeroOrMore<P>
@@ -482,7 +483,7 @@ pub fn separated_by<P, S>(p: P, s: S) -> SeparatedBy<P, S> {
     SeparatedBy(p, s)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SeparatedBy<P, S>(P, S);
 
 impl<P, S> Parser for SeparatedBy<P, S>
@@ -511,7 +512,7 @@ pub fn empty<I, O>(x: O) -> Empty<I, O> {
     Empty(x, marker::PhantomData)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Empty<I, O>(O, marker::PhantomData<I>);
 
 impl<I, O> Parser for Empty<I, O>
@@ -528,7 +529,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Optionally<P>(P);
 
 impl<P> Parser for Optionally<P>
@@ -544,7 +545,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OneOrMore<P>(P);
 
 impl<P> Parser for OneOrMore<P>
@@ -567,7 +568,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SkipLeft<P, Q>(P, Q);
 
 impl<P, Q> Parser for SkipLeft<P, Q>
@@ -584,7 +585,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SkipRight<P, Q>(P, Q);
 
 impl<P, Q> Parser for SkipRight<P, Q>
@@ -654,12 +655,14 @@ macro_rules! match_map {
 
 #[macro_export]
 macro_rules! expect {
-    ($pattern:pat $(if $guard:expr)? => $ret:expr) => {
-        filter_map(move |x| match x {
-            $pattern $(if $guard)? => Some($ret),
-            _ => None
-        })
-    }
+    ( $($pat:pat $(if $guard:expr)? => $ret:expr),* ) => {
+         filter_map(move |x| match x {
+            $(
+                $pat $(if $guard)? => Some($ret),
+            )*
+            _ => None,
+         })
+    };
 }
 
 pub fn filter_map<T, U, F>(p: F) -> impl Parser<In = T, Out = U>

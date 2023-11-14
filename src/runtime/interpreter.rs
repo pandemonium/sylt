@@ -1,3 +1,5 @@
+use anyhow::bail;
+
 use crate::ast;
 use std::collections;
 
@@ -80,17 +82,15 @@ impl<'a> ActivationFrame<'a> {
         self.return_value = Some(return_value)
     }
 
-    fn verify_return_value(&self, of_type: &ast::Type) -> Result<ast::Constant, Error> {
-        fn type_unifies(lhs: &ast::Type, rhs: &ast::Type) -> bool {
-            // Int <: Number, etc.
-            println!("lhs: {lhs:?}; rhs: {rhs:?}");
-            lhs == rhs || lhs == &ast::Type::Number && rhs.name().local_name() == "Int"
-        }
+    fn types_unify(lhs: &ast::Type, rhs: &ast::Type) -> bool {
+        lhs.subsumes(rhs)
+    }
 
+    fn verify_return_value(&self, of_type: &ast::Type) -> Result<ast::Constant, Error> {
         if of_type != &ast::Type::Unit {
             self.return_value
                 .as_ref()
-                .filter(|value| type_unifies(of_type, &value.get_type()))
+                .filter(|value| Self::types_unify(of_type, &value.get_type()))
                 .ok_or_else(|| Error::ExpectedReturn(of_type.clone()))
                 .cloned()
         } else {
@@ -105,20 +105,21 @@ impl<'a> ActivationFrame<'a> {
         arguments: &[ast::Expression],
     ) -> Result<ast::Constant, Error> {
         match symbol {
-            ast::Select::Function(name) => match self.apply_function(name, arguments) {
+            ast::Select::Function(name) => match self.apply_function(apply, name, arguments) {
                 Err(Error::UnresolvedSymbol(name)) => {
                     let name = ast::Name::intrinsic(&name.name);
-                    self.apply_intrinsic(&name, arguments)
+                    self.apply_intrinsic(apply, &name, arguments)
                 }
                 _otherwise => _otherwise,
             },
-            ast::Select::Intrinsic(name) => self.apply_intrinsic(name, arguments),
+            ast::Select::Intrinsic(name) => self.apply_intrinsic(apply, name, arguments),
             ast::Select::Type(name) => Err(Error::ExpectedFunction(name.clone())),
         }
     }
 
     fn apply_intrinsic(
         &self,
+        apply: &ast::Expression,
         symbol: &ast::Name,
         arguments: &[ast::Expression],
     ) -> Result<ast::Constant, Error> {
@@ -134,6 +135,7 @@ impl<'a> ActivationFrame<'a> {
 
     fn apply_function(
         &self,
+        apply: &ast::Expression,
         symbol: &ast::Name,
         arguments: &[ast::Expression],
     ) -> Result<ast::Constant, Error> {
@@ -148,10 +150,17 @@ impl<'a> ActivationFrame<'a> {
         if arguments.len() == function.parameters.len() {
             let mut frame = Self::new(self.interpreter);
             for (argument, parameter) in arguments.iter().zip(&function.parameters) {
-                // Verify that the type of `value` matches parameter.type
+                let name = ast::Name::simple(parameter.get_name());
                 let value = self.reduce(argument)?;
-                let name = ast::Name::simple(&parameter.name);
-                frame.put_local_variable(&name, value);
+                if parameter.get_type().subsumes(&value.get_type()) {
+                    frame.put_local_variable(&name, value);
+                } else {
+                    Err(Error::ExpectedType {
+                        expected: parameter.get_type().name(),
+                        was: value.get_type().name(),
+                        at: apply.clone(),
+                    })?;
+                }
             }
             frame.interpret_block(&function.body)?;
             frame.verify_return_value(&function.return_type)
@@ -163,6 +172,7 @@ impl<'a> ActivationFrame<'a> {
         }
     }
 
+    // Why not consume?
     fn reduce(&self, e: &ast::Expression) -> Result<ast::Constant, Error> {
         match e {
             ast::Expression::Literal(constant) => Ok(constant.clone()),
@@ -234,6 +244,7 @@ impl<'a> ActivationFrame<'a> {
     }
 }
 
+// This isn't the right composition
 pub struct Interpreter {
     environment: Environment,
     program: ast::Program,
@@ -263,5 +274,97 @@ impl Interpreter {
         let mut frame = ActivationFrame::new(self);
         frame.interpret_block(&self.program.entry_point)?;
         frame.verify_return_value(&ast::Constant::Int(0).get_type())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ActivationFrame, Interpreter};
+    use crate::{
+        ast::{self, Constant, Program},
+        runtime::intrinsics,
+        syntax, Error,
+    };
+
+    fn make_interpreter() -> Interpreter {
+        Interpreter {
+            environment: super::Environment::Builtins(intrinsics::initialize()),
+            program: Program {
+                declarations: vec![],
+                entry_point: crate::ast::Block { statements: vec![] },
+            },
+        }
+    }
+
+    fn run_program(source: &str) -> Result<ast::Constant, Error> {
+        let program = syntax::analyze(&source.chars().collect::<Vec<_>>())?;
+        let interpreter = Interpreter::new(program, intrinsics::initialize());
+        Ok(interpreter.run()?)
+    }
+
+    fn eval_expr(expr: &str, result: Constant) {
+        let intp = make_interpreter();
+        let frame = ActivationFrame::new(&intp);
+        let expr = syntax::parse_expression(expr).unwrap();
+        assert_eq!(frame.reduce(&expr).unwrap(), result);
+    }
+
+    #[test]
+    fn operator_precedence() {
+        eval_expr("1 < 2 and 3 + 4 >= 5", Constant::Boolean(true));
+        eval_expr("1 + 2 * 3", Constant::Int(7));
+        eval_expr("2 * 3 + 1", Constant::Int(7));
+        eval_expr("2 * (3 + 1)", Constant::Int(8));
+        eval_expr("(3 + 1) * 2", Constant::Int(8));
+
+        eval_expr("1.0 + 2.0 * 3.0", Constant::Float(7.0));
+        eval_expr("2.0 * 3.0 + 1.0", Constant::Float(7.0));
+        eval_expr("2.0 * (3.0 + 1.0)", Constant::Float(8.0));
+        eval_expr("(3.0 + 1.0) * 2.0", Constant::Float(8.0));
+
+        eval_expr("1 < (3 + 1) * 2", Constant::Boolean(true));
+        eval_expr("1 > (3 + 1) * 2", Constant::Boolean(false));
+        eval_expr("1 <= (3 + 1) * 2", Constant::Boolean(true));
+        eval_expr("1 >= (3 + 1) * 2", Constant::Boolean(false));
+
+        eval_expr(
+            "1 < (3 + 1) * 2 and 1 < (3 + 1) * 2",
+            Constant::Boolean(true),
+        );
+        eval_expr(
+            "1 < (3 + 1) * 2 or 1 < (3 + 1) * 2",
+            Constant::Boolean(true),
+        );
+        eval_expr(
+            "1 < (3 + 1) * 2 and 1 > (3 + 1) * 2",
+            Constant::Boolean(false),
+        );
+        eval_expr(
+            "1 > (3 + 1) * 2 or 1 > (3 + 1) * 2",
+            Constant::Boolean(false),
+        );
+    }
+
+    #[test]
+    fn fibonacci() {
+        let source = r#"
+        fn fibonacci(n: Int) -> Int {
+            if n == 0 {
+                return 0;
+            } else {
+                if n == 1 {
+                    return 1;
+                } else {
+                    return fibonacci(n - 1) + fibonacci(n - 2);
+                }
+            }
+        }
+
+        {
+            return fibonacci(30);
+        }
+        "#;
+        let result = run_program(source).unwrap();
+        println!("{result:#?}");
     }
 }

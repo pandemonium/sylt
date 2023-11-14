@@ -63,7 +63,7 @@ impl PartialEq for IntrinsicFunctionPrototype {
         self.name == other.name
             && self.parameters == other.parameters
             && self.return_type == other.return_type
-//            && self.call_proxy == other.call_proxy
+        //            && self.call_proxy == other.call_proxy
     }
 }
 
@@ -111,6 +111,14 @@ impl Parameter {
             name: name.into(),
             type_,
         }
+    }
+
+    pub fn get_type(&self) -> &Type {
+        &self.type_
+    }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -241,9 +249,16 @@ impl Type {
     pub fn name(&self) -> Name {
         match self {
             Self::Named(name) => name.clone(),
-            Self::Number => Name::simple("{number}"),
-            Self::Unit => Name::simple("unit"),
+            Self::Number => Name::intrinsic("{number}"),
+            Self::Unit => Name::intrinsic("Unit"),
         }
+    }
+
+    pub fn subsumes(&self, rhs: &Self) -> bool {
+        // Magic numbers a-plenty
+        self == rhs
+            || self == &Self::Number && rhs == &Self::Named(Name::intrinsic("Int"))
+            || self == &Self::Number && rhs == &Self::Named(Name::intrinsic("Float"))
     }
 }
 
@@ -266,16 +281,12 @@ impl Constant {
     }
 
     pub fn get_type(&self) -> Type {
-        fn qualified_type_name(name: &str) -> Type {
-            Type::named(&Name::intrinsic(name))
-        }
-
         match self {
-            Constant::Boolean(..) => qualified_type_name("Boolean"),
-            Constant::Int(..) => qualified_type_name("Int"),
-            Constant::Float(..) => qualified_type_name("Float"),
-            Constant::Text(..) => qualified_type_name("Text"),
-            Constant::Void => qualified_type_name("Unit"),
+            Constant::Boolean(..) => Type::named(&Name::intrinsic("Boolean")),
+            Constant::Int(..) => Type::named(&Name::intrinsic("Int")),
+            Constant::Float(..) => Type::named(&Name::intrinsic("Float")),
+            Constant::Text(..) => Type::named(&Name::intrinsic("Text")),
+            Constant::Void => Type::named(&Name::intrinsic("Unit")),
         }
     }
 }
@@ -299,10 +310,17 @@ pub enum Operator {
     Times,
     Divides,
     Modulo,
-    LessThan,
-    LessThanOrEqual,
-    GreaterThan,
+
+    LT,
+    LTE,
+    GT,
+    GTE,
+
     Equals,
+    NotEqual,
+
+    And,
+    Or,
 }
 
 impl Operator {
@@ -313,10 +331,14 @@ impl Operator {
             Operator::Times => Name::intrinsic("times"),
             Operator::Divides => Name::intrinsic("divides"),
             Operator::Modulo => Name::intrinsic("modulo"),
-            Operator::LessThan => Name::intrinsic("less_than"),
-            Operator::LessThanOrEqual => Name::intrinsic("less_than_or_equal"),
-            Operator::GreaterThan => Name::intrinsic("greater_than"),
+            Operator::LT => Name::intrinsic("less_than"),
+            Operator::LTE => Name::intrinsic("less_than_or_equal"),
+            Operator::GT => Name::intrinsic("greater_than"),
+            Operator::GTE => Name::intrinsic("greater_than_or_equal"),
             Operator::Equals => Name::intrinsic("equals"),
+            Operator::NotEqual => Name::intrinsic("not_equal"),
+            Operator::And => Name::intrinsic("and"),
+            Operator::Or => Name::intrinsic("or"),
         }
     }
 
@@ -346,10 +368,14 @@ impl Operator {
             Self::Times,
             Self::Divides,
             Self::Modulo,
-            Self::LessThan,
-            Self::LessThanOrEqual,
-            Self::GreaterThan,
+            Self::LT,
+            Self::LTE,
+            Self::GT,
+            Self::GTE,
             Self::Equals,
+            Self::NotEqual,
+            Self::And,
+            Self::Or,
             // boolean algebra
         ]
         .into_iter()
@@ -360,7 +386,10 @@ impl Operator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{interpreter, intrinsics::{io, artithmetic::operator}};
+    use crate::runtime::{
+        interpreter,
+        intrinsics::{artithmetic::operator, io},
+    };
 
     #[test]
     fn show_hello_world_program() {

@@ -7,7 +7,7 @@ use self::types::Token;
 type Result<A> = result::Result<A, types::Error>;
 
 pub mod types {
-    use crate::kombi::Position;
+    use crate::{kombi::Position, expect};
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub enum Error {
@@ -61,6 +61,7 @@ pub mod types {
         GreaterThan,
         GreaterThanOrEqual,
         Equals,
+        NotEqual,
         Colon,
         Semicolon,
         Comma,
@@ -136,6 +137,7 @@ pub mod types {
                 Self::LessThanOrEqual => '$',
                 Self::GreaterThanOrEqual => '$',
                 Self::Equals => '$',
+                Self::NotEqual => '$',
                 Self::ThinRightArrow => '$',
             }
         }
@@ -159,6 +161,8 @@ pub mod types {
         Let,
         Fn,
         Return,
+        And,
+        Or,
     }
 
     impl Keyword {
@@ -170,6 +174,8 @@ pub mod types {
                 "let" => Some(Self::Let),
                 "fn" => Some(Self::Fn),
                 "return" => Some(Self::Return),
+                "and" => Some(Self::And),
+                "or" => Some(Self::Or),
                 _otherwise => None,
             }
         }
@@ -217,10 +223,12 @@ mod kombi_parsers {
         let gte = string(">=").map(|_| Separator::GreaterThanOrEqual);
         let lte = string("<=").map(|_| Separator::LessThanOrEqual);
         let equals = string("==").map(|_| Separator::Equals);
+        let not_equal = string("!=").map(|_| Separator::NotEqual);
         let arrow = string("->").map(|_| Separator::ThinRightArrow);
 
         gte.or_else(lte)
             .or_else(equals)
+            .or_else(not_equal)
             .or_else(arrow)
             .map(Token::Separator)
     }

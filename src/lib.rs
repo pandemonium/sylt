@@ -1,3 +1,5 @@
+use runtime::interpreter;
+
 #[macro_use]
 extern crate lazy_static;
 
@@ -6,3 +8,22 @@ pub mod runtime;
 pub mod kombi;
 pub mod lexer;
 pub mod syntax;
+
+
+#[derive(Debug)]
+pub enum Error {
+    CompileTime(syntax::types::Error),
+    Runtime(runtime::interpreter::Error),
+}
+
+impl From<syntax::types::Error> for Error {
+    fn from(value: syntax::types::Error) -> Self {
+        Error::CompileTime(value)
+    }
+}
+
+impl From<interpreter::Error> for Error {
+    fn from(value: interpreter::Error) -> Self {
+        Error::Runtime(value)
+    }
+}
