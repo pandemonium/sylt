@@ -10,8 +10,8 @@ pub struct Program {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Declaration {
-    Function(FunctionDef),
-    IntrinsicFunction(IntrinsicFunctionPrototype),
+    Function(FunctionDeclarator),
+    IntrinsicFunction(IntrinsicFunctionDeclarator),
     Operator(Operator),
     Static {
         name: Name,
@@ -30,7 +30,7 @@ impl Declaration {
         }
     }
 
-    pub fn as_function(&self) -> Option<&FunctionDef> {
+    pub fn as_function(&self) -> Option<&FunctionDeclarator> {
         if let Self::Function(def) = self {
             Some(def)
         } else {
@@ -38,7 +38,7 @@ impl Declaration {
         }
     }
 
-    pub fn as_intrinsic(&self) -> Option<&IntrinsicFunctionPrototype> {
+    pub fn as_intrinsic(&self) -> Option<&IntrinsicFunctionDeclarator> {
         // Is there a more ergonomic version of this pattern?
         if let Self::IntrinsicFunction(def) = self {
             Some(def)
@@ -49,7 +49,7 @@ impl Declaration {
 }
 
 #[derive(Clone, Debug)]
-pub struct IntrinsicFunctionPrototype {
+pub struct IntrinsicFunctionDeclarator {
     pub name: Name,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
@@ -58,7 +58,7 @@ pub struct IntrinsicFunctionPrototype {
     pub dispatch: rc::Rc<dyn intrinsics::IntrinsicProxy>,
 }
 
-impl PartialEq for IntrinsicFunctionPrototype {
+impl PartialEq for IntrinsicFunctionDeclarator {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
             && self.parameters == other.parameters
@@ -67,7 +67,7 @@ impl PartialEq for IntrinsicFunctionPrototype {
     }
 }
 
-impl IntrinsicFunctionPrototype {
+impl IntrinsicFunctionDeclarator {
     pub fn new<F>(name: &Name, parameters: &[Parameter], return_type: Type, target: F) -> Self
     where
         F: intrinsics::IntrinsicProxy + 'static,
@@ -86,14 +86,14 @@ impl IntrinsicFunctionPrototype {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FunctionDef {
+pub struct FunctionDeclarator {
     pub name: Name,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub body: Block,
 }
 
-impl FunctionDef {
+impl FunctionDeclarator {
     pub fn name(&self) -> &Name {
         &self.name
     }
@@ -122,6 +122,9 @@ impl Parameter {
     }
 }
 
+// Deconstruct these into 
+// Statement::Let(LetStatement) so that I can do things 
+// with separate types later?
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     Let {
@@ -151,7 +154,6 @@ pub enum Expression {
     Literal(Constant),
     Variable(Name),
     ApplyInfix {
-        // This isn't necessary, really.
         lhs: Box<Expression>,
         symbol: Operator,
         rhs: Box<Expression>,
@@ -394,7 +396,7 @@ mod tests {
     #[test]
     fn show_hello_world_program() {
         let ast = Program {
-            declarations: vec![Declaration::Function(FunctionDef {
+            declarations: vec![Declaration::Function(FunctionDeclarator {
                 name: Name::simple("print_hello_world"),
                 parameters: vec![],
                 return_type: Type::Unit,

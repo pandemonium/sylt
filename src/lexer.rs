@@ -1,13 +1,11 @@
-use std::result;
-
-use crate::kombi::{ParseResult, ParseState, Parser};
-
 use self::types::Token;
+use crate::kombi::{ParseResult, ParseState, Parser};
+use std::result;
 
 type Result<A> = result::Result<A, types::Error>;
 
 pub mod types {
-    use crate::{kombi::Position, expect};
+    use crate::kombi::Position;
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub enum Error {
@@ -42,6 +40,11 @@ pub mod types {
         Literal,
     }
 
+    pub struct Lexeme {
+        token: Token,
+        
+    }
+
     #[derive(Clone, Debug, PartialEq)]
     pub enum Literal {
         Text(String),
@@ -49,6 +52,8 @@ pub mod types {
         FloatingPoint(f64),
         Boolean(bool),
     }
+
+    //OnceLock
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub enum Separator {
@@ -75,40 +80,6 @@ pub mod types {
         Slash,
         Percent,
         ThinRightArrow,
-    }
-
-    lazy_static! {
-        pub static ref SIMPLE_SEPARATORS: &'static [Separator] = &[
-            Separator::LeftParen,
-            Separator::RightParen,
-            Separator::LeftBrace,
-            Separator::RightBrace,
-            Separator::LessThan,
-            Separator::GreaterThan,
-            Separator::Colon,
-            Separator::Semicolon,
-            Separator::Comma,
-            Separator::Period,
-            Separator::DoubleQuote,
-            Separator::SingleQuote,
-            Separator::Assign,
-            Separator::Plus,
-            Separator::Minus,
-            Separator::Star,
-            Separator::Slash,
-            Separator::Percent,
-        ];
-    }
-
-    lazy_static! {
-        pub static ref SIMPLE_SEPARATOR_CHARS: Vec<char> = make_separator_chars();
-    }
-
-    fn make_separator_chars() -> Vec<char> {
-        SIMPLE_SEPARATORS
-            .iter()
-            .map(|c| c.into_char())
-            .collect::<Vec<_>>()
     }
 
     impl Separator {
@@ -143,10 +114,27 @@ pub mod types {
         }
 
         pub fn try_from_char(c: char) -> Option<Self> {
-            SIMPLE_SEPARATORS
-                .iter()
-                .find(|s| s.into_char() == c)
-                .copied()
+            match c {
+                '(' => Some(Self::LeftParen),
+                ')' => Some(Self::RightParen),
+                '{' => Some(Self::LeftBrace),
+                '}' => Some(Self::RightBrace),
+                '<' => Some(Self::LessThan),
+                '>' => Some(Self::GreaterThan),
+                ':' => Some(Self::Colon),
+                ';' => Some(Self::Semicolon),
+                ',' => Some(Self::Comma),
+                '.' => Some(Self::Period),
+                '"' => Some(Self::DoubleQuote),
+                '\'' => Some(Self::SingleQuote),
+                '=' => Some(Self::Assign),
+                '+' => Some(Self::Plus),
+                '-' => Some(Self::Minus),
+                '*' => Some(Self::Star),
+                '/' => Some(Self::Slash),
+                '%' => Some(Self::Percent),
+                _otherwise => None,
+            }
         }
     }
 
@@ -184,19 +172,10 @@ pub mod types {
 
 mod kombi_parsers {
     use super::types::{self, Identifier, Keyword, Literal, Separator, Token};
-    use crate::kombi::{enclosed_within, one_of, string, such_that, Parser, Positioned};
-
-    lazy_static! {
-        static ref LEGAL_IDENTIFIER_CHARS: Vec<char> = make_legal_identifier_chars();
-    }
-
-    fn make_legal_identifier_chars() -> Vec<char> {
-        let mut identifiers = vec![];
-        identifiers.extend('a'..='z');
-        identifiers.extend('A'..='Z');
-        identifiers.push('_');
-        identifiers
-    }
+    use crate::{
+        expect,
+        kombi::{enclosed_within, filter_map, string, such_that, Parser, Positioned},
+    };
 
     fn whitespace() -> impl Parser<In = char, Out = Vec<char>> {
         such_that(|c| char::is_whitespace(*c))
@@ -213,8 +192,7 @@ mod kombi_parsers {
     }
 
     fn separator() -> impl Parser<In = char, Out = Token> {
-        one_of(&types::SIMPLE_SEPARATOR_CHARS)
-            .filter_map(types::Separator::try_from_char)
+        filter_map(|c| types::Separator::try_from_char(*c))
             .with_positions()
             .map(Token::Separator)
     }
@@ -299,7 +277,7 @@ mod kombi_parsers {
     }
 
     fn identifier() -> impl Parser<In = char, Out = Identifier> {
-        one_of(&LEGAL_IDENTIFIER_CHARS)
+        expect!(ch @ ('a'..='z' | 'A'..='Z' | '_') => *ch)
             .with_positions()
             .one_or_more()
             .map(|cs| cs.iter().collect::<String>())

@@ -107,6 +107,7 @@ fn expression_core() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     .or_else(expression_rhs())
 }
 
+#[inline]
 fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     let level_1 = expect!(
         lex::Token::Separator(lex::Separator::Star) => ast::Operator::Times,
@@ -132,8 +133,7 @@ fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     );
 
     let level_5 = expect!(
-        lex::Token::Keyword(lex::Keyword::And) => ast::Operator::And,
-        lex::Token::Keyword(lex::Keyword::Or) => ast::Operator::Or
+        lex::Token::Keyword(lex::Keyword::And) => ast::Operator::And
     );
 
     let level_6 = expect!(
@@ -151,7 +151,6 @@ fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     level_5
 }
 
-#[inline]
 fn infix_level<O, L>(
     operator: O,
     super_level: L,
@@ -203,7 +202,14 @@ impl Parser for Thunk<ast::Statement> {
     type Out = ast::Statement;
 
     fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
-        statement_inner().parse(input)
+        let ParseResult { state, parsed } = statement_inner().parse(input);
+
+        if let Some(parsed) = parsed {
+            ParseResult::accepted(state, parsed)
+        } else {
+            println!("Failed at {:?}", state.at);
+            ParseResult::balked(state)
+        }
     }
 }
 
@@ -288,7 +294,7 @@ fn function_declaration() -> impl Parser<In = lex::Token, Out = ast::Declaration
         .and_also(identifier().map(|x| ast::Type::named(&ast::Name::intrinsic(&x))))
         .and_also(block())
         .map(
-            |(((name, parameters), return_type), body)| ast::FunctionDef {
+            |(((name, parameters), return_type), body)| ast::FunctionDeclarator {
                 name,
                 parameters,
                 return_type,
@@ -687,7 +693,7 @@ mod tests {
         let was = super::function_declaration().parse(ParseState::new(input));
         assert_eq!(
             was.into_option(),
-            Some(Declaration::Function(FunctionDef {
+            Some(Declaration::Function(FunctionDeclarator {
                 name: Name::simple("make_hay"),
                 parameters: vec![
                     Parameter {

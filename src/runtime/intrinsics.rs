@@ -88,8 +88,8 @@ pub mod artithmetic {
             }
         }
 
-        fn make_intrinsic_function(op: &Operator) -> ast::IntrinsicFunctionPrototype {
-            ast::IntrinsicFunctionPrototype::new(
+        fn make_intrinsic_function(op: &Operator) -> ast::IntrinsicFunctionDeclarator {
+            ast::IntrinsicFunctionDeclarator::new(
                 &op.name(),
                 &op.parameters(),
                 op.return_type(),
@@ -154,7 +154,7 @@ pub mod io {
     pub fn declarations() -> interpreter::SymbolTable {
         // Perhaps this can be parsed later on
         // "fn print_line(line: <What here>) -> unit" => ast::InstrinsicFunctionDef
-        let functions = vec![ast::IntrinsicFunctionPrototype::new(
+        let functions = vec![ast::IntrinsicFunctionDeclarator::new(
             &ast::Name::intrinsic("print_line"),
             &[ast::Parameter::new(
                 "line",

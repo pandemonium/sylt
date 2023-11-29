@@ -1,4 +1,3 @@
-use core::fmt;
 use std::marker;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -86,7 +85,7 @@ impl<'a, T> ParseState<'a, T> {
         &self.token
     }
 
-    pub fn head(&self) -> Option<&T> {
+    pub fn peek(&self) -> Option<&T> {
         if let &[ref head, ..] = self.remains {
             Some(&head)
         } else {
@@ -418,7 +417,7 @@ where
     fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
         let SuchThat(p, ..) = self;
 
-        match input.head() {
+        match input.peek() {
             Some(head) if p(head) => {
                 let head = head.clone();
                 ParseResult::accepted(input.advance(1), head)

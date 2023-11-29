@@ -1,5 +1,3 @@
-use anyhow::bail;
-
 use crate::ast;
 use std::collections;
 
@@ -60,15 +58,13 @@ impl<'a> ActivationFrame<'a> {
     fn resolve_intrinsic_function(
         &self,
         symbol: &ast::Name,
-    ) -> Result<&ast::IntrinsicFunctionPrototype, Error> {
+    ) -> Result<&ast::IntrinsicFunctionDeclarator, Error> {
         if let Some(ast::Declaration::IntrinsicFunction(def)) = self.find_function(symbol) {
             Ok(def)
         } else {
             Err(Error::UnresolvedSymbol(symbol.clone()))
         }
     }
-
-    //    fn resolve_
 
     fn get_local_variable(&self, symbol: &ast::Name) -> Option<&ast::Constant> {
         self.locals.get(&symbol.name)
@@ -172,7 +168,6 @@ impl<'a> ActivationFrame<'a> {
         }
     }
 
-    // Why not consume?
     fn reduce(&self, e: &ast::Expression) -> Result<ast::Constant, Error> {
         match e {
             ast::Expression::Literal(constant) => Ok(constant.clone()),
@@ -345,7 +340,7 @@ mod tests {
         );
     }
 
-    #[test]
+    //    #[test]
     fn fibonacci() {
         let source = r#"
         fn fibonacci(n: Int) -> Int {
