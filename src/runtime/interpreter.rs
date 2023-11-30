@@ -199,13 +199,13 @@ impl<'a> ActivationFrame<'a> {
                 }
                 ast::Statement::If {
                     predicate,
-                    when_true,
-                    when_false,
+                    consequent,
+                    alternate,
                 } => {
                     if self.evaluate_boolean(predicate)? {
-                        self.interpret_block(when_true)?;
+                        self.interpret_block(consequent)?;
                     } else {
-                        self.interpret_block(when_false)?;
+                        self.interpret_block(alternate)?;
                     }
                 }
                 ast::Statement::While { predicate, body } => {

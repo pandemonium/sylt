@@ -1,7 +1,7 @@
 use sylt::{
     ast::*,
     lexer,
-    runtime::{interpreter::Interpreter, intrinsics},
+    runtime::{interpreter::Interpreter, intrinsics, vm},
     syntax, Error,
 };
 
@@ -20,14 +20,17 @@ fn main() -> Result<(), Error> {
     }
 
     {
-        return fibonacci(30);
+        return fibonacci(27);
     }
     "#;
 
     let program = syntax::analyze(&source.chars().collect::<Vec<_>>())?;
-    let interpreter = Interpreter::new(program, intrinsics::initialize());
-    let return_value = interpreter.run()?;
-    println!("{:#?}", return_value);
+    let exe = vm::compile(program);
+    println!("{exe:#?}");
+
+//    let interpreter = Interpreter::new(program, intrinsics::initialize());
+//    let return_value = interpreter.run()?;
+//    println!("{:#?}", return_value);
 
     Ok(())
 }

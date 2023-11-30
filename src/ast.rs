@@ -133,8 +133,8 @@ pub enum Statement {
     },
     If {
         predicate: Expression,
-        when_true: Block,
-        when_false: Block,
+        consequent: Block,
+        alternate: Block,
     },
     While {
         predicate: Expression,

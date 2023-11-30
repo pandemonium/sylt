@@ -107,7 +107,6 @@ fn expression_core() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     .or_else(expression_rhs())
 }
 
-#[inline]
 fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     let level_1 = expect!(
         lex::Token::Separator(lex::Separator::Star) => ast::Operator::Times,
@@ -133,10 +132,11 @@ fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     );
 
     let level_5 = expect!(
-        lex::Token::Keyword(lex::Keyword::And) => ast::Operator::And
+        lex::Token::Keyword(lex::Keyword::And) => ast::Operator::And,
+        lex::Token::Keyword(lex::Keyword::Or) => ast::Operator::Or
     );
 
-    let level_6 = expect!(
+    let _level_6 = expect!(
         lex::Token::Keyword(lex::Keyword::Or) => ast::Operator::Or
     );
 
@@ -243,10 +243,10 @@ fn if_statement() -> impl Parser<In = lex::Token, Out = ast::Statement> {
         .skip_left(expression())
         .and_also(block())
         .and_also(keyword(lex::Keyword::Else).skip_left(block()))
-        .map(|((predicate, when_true), when_false)| ast::Statement::If {
+        .map(|((predicate, consequent), alternate)| ast::Statement::If {
             predicate,
-            when_true,
-            when_false,
+            consequent,
+            alternate,
         })
 }
 
@@ -485,7 +485,7 @@ mod tests {
                     symbol: Operator::Times,
                     rhs: Box::new(Expression::Literal(Constant::Int(456))),
                 },
-                when_true: ast::Block {
+                consequent: ast::Block {
                     statements: vec![
                         ast::Statement::Let {
                             lhs: "x".into(),
@@ -501,7 +501,7 @@ mod tests {
                         })
                     ]
                 },
-                when_false: ast::Block {
+                alternate: ast::Block {
                     statements: vec![ast::Statement::Let {
                         lhs: "x".into(),
                         rhs: ast::Expression::Literal(Constant::Text("Hi, mom".into()))
