@@ -24,13 +24,25 @@ fn main() -> Result<(), Error> {
     }
     "#;
 
+//    let source = r#"
+//    fn foo() -> Int {
+//        while 1 < 2 {
+//            3 + 4;
+//        }
+//    }
+//
+//    {
+//        foo();
+//    }
+//    "#;
+
     let program = syntax::analyze(&source.chars().collect::<Vec<_>>())?;
     let exe = vm::compile(program);
-    println!("{exe:#?}");
+    println!("{exe}");
 
-//    let interpreter = Interpreter::new(program, intrinsics::initialize());
-//    let return_value = interpreter.run()?;
-//    println!("{:#?}", return_value);
+    //    let interpreter = Interpreter::new(program, intrinsics::initialize());
+    //    let return_value = interpreter.run()?;
+    //    println!("{:#?}", return_value);
 
     Ok(())
 }

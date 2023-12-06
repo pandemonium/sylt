@@ -38,7 +38,7 @@ struct ActivationFrame<'a> {
     interpreter: &'a Interpreter,
 
     // Perhaps this should be a hierarchical thing for lexical scopes
-    locals: collections::HashMap<String, ast::Constant>,
+    locals: collections::HashMap<ast::Name, ast::Constant>,
     return_value: Option<ast::Constant>,
 }
 
@@ -66,12 +66,12 @@ impl<'a> ActivationFrame<'a> {
         }
     }
 
-    fn get_local_variable(&self, symbol: &ast::Name) -> Option<&ast::Constant> {
-        self.locals.get(&symbol.name)
+    fn get_local_variable(&self, symbol: &ast::Select) -> Option<&ast::Constant> {
+        self.locals.get(symbol.as_value().expect("Select::Value"))
     }
 
     fn put_local_variable(&mut self, symbol: &ast::Name, value: ast::Constant) {
-        self.locals.insert(symbol.name.clone(), value);
+        self.locals.insert(symbol.clone(), value);
     }
 
     fn set_return_value(&mut self, return_value: ast::Constant) {
@@ -91,25 +91,6 @@ impl<'a> ActivationFrame<'a> {
                 .cloned()
         } else {
             Ok(ast::Constant::Void)
-        }
-    }
-
-    fn apply_symbol(
-        &self,
-        apply: &ast::Expression,
-        symbol: &ast::Select,
-        arguments: &[ast::Expression],
-    ) -> Result<ast::Constant, Error> {
-        match symbol {
-            ast::Select::Function(name) => match self.apply_function(apply, name, arguments) {
-                Err(Error::UnresolvedSymbol(name)) => {
-                    let name = ast::Name::intrinsic(&name.name);
-                    self.apply_intrinsic(apply, &name, arguments)
-                }
-                _otherwise => _otherwise,
-            },
-            ast::Select::Intrinsic(name) => self.apply_intrinsic(apply, name, arguments),
-            ast::Select::Type(name) => Err(Error::ExpectedFunction(name.clone())),
         }
     }
 
@@ -174,17 +155,18 @@ impl<'a> ActivationFrame<'a> {
             ast::Expression::Variable(symbol) => self
                 .get_local_variable(symbol)
                 .cloned()
-                .ok_or_else(|| Error::UnresolvedSymbol(symbol.clone())),
+                .ok_or_else(|| Error::UnresolvedSymbol(symbol.name().clone())),
             ast::Expression::ApplyInfix { lhs, symbol, rhs } => {
                 let lhs = self.reduce(&lhs)?;
                 let rhs = self.reduce(&rhs)?;
-                self.reduce(&ast::Expression::Apply {
-                    symbol: symbol.select(),
-                    arguments: vec![ast::Expression::Literal(lhs), ast::Expression::Literal(rhs)],
-                })
+                self.apply_intrinsic(
+                    e,
+                    &symbol.name(),
+                    &[ast::Expression::Literal(lhs), ast::Expression::Literal(rhs)],
+                )
             }
             ast::Expression::Apply { symbol, arguments } => {
-                self.apply_symbol(e, symbol, &arguments)
+                self.apply_function(e, symbol.as_value().expect("Select::Value"), &arguments)
             }
         }
     }

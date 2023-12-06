@@ -184,13 +184,13 @@ fn apply() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     identifier()
         .and_also(argument_list)
         .map(|(symbol, arguments)| ast::Expression::Apply {
-            symbol: ast::Select::Function(ast::Name::simple(symbol.as_str())),
+            symbol: ast::Select::Value(ast::Name::simple(symbol.as_str())),
             arguments,
         })
 }
 
 fn variable() -> impl Parser<In = lex::Token, Out = ast::Expression> {
-    identifier().map(|id| ast::Expression::Variable(ast::Name::simple(&id)))
+    identifier().map(|id| ast::Expression::Variable(ast::Select::Value(ast::Name::simple(&id))))
 }
 
 fn statement() -> Thunk<ast::Statement> {
@@ -276,9 +276,11 @@ fn function_declaration() -> impl Parser<In = lex::Token, Out = ast::Declaration
     let parameter = identifier()
         .skip_right(separator(lex::Separator::Colon))
         .and_also(identifier())
-        .map(|(name, type_)| ast::Parameter {
-            name,
-            type_: ast::Type::named(&ast::Name::intrinsic(&type_)),
+        .map(|(name, type_)| {
+            ast::Parameter::new(
+                ast::Name::simple(&name),
+                ast::Type::named(&ast::Name::intrinsic(&type_)),
+            )
         });
 
     let formal_parameters = enclosed_within(
@@ -433,7 +435,7 @@ mod tests {
                             rhs: Expression::Literal(Constant::Float(427.427))
                         },
                         Statement::Expression(Expression::Apply {
-                            symbol: Select::Function(ast::Name::simple("foo")),
+                            symbol: Select::Value(ast::Name::simple("foo")),
                             arguments: vec![ast::Expression::ApplyInfix {
                                 lhs: Box::new(Expression::Literal(Constant::Int(1))),
                                 symbol: Operator::Plus,
@@ -492,7 +494,7 @@ mod tests {
                             rhs: ast::Expression::Literal(Constant::Float(427.427))
                         },
                         Statement::Expression(Expression::Apply {
-                            symbol: Select::Function(ast::Name::simple("foo")),
+                            symbol: Select::Value(ast::Name::simple("foo")),
                             arguments: vec![ast::Expression::ApplyInfix {
                                 lhs: Box::new(Expression::Literal(Constant::Int(1))),
                                 symbol: Operator::Plus,
@@ -649,11 +651,11 @@ mod tests {
             was.into_option(),
             Some(Expression::ApplyInfix {
                 lhs: Box::new(Expression::Apply {
-                    symbol: Select::Function(Name::simple("foo")),
+                    symbol: Select::Value(Name::simple("foo")),
                     arguments: vec![Expression::ApplyInfix {
                         lhs: Box::new(Expression::Literal(Constant::Int(1))),
                         symbol: Operator::Plus,
-                        rhs: Box::new(Expression::Variable(Name::simple("x")))
+                        rhs: Box::new(Expression::Variable(ast::Select::Value(Name::simple("x"))))
                     }]
                 }),
                 symbol: Operator::Times,
@@ -697,11 +699,11 @@ mod tests {
                 name: Name::simple("make_hay"),
                 parameters: vec![
                     Parameter {
-                        name: "name".into(),
+                        name: ast::Name::simple("name"),
                         type_: Type::named(&Name::intrinsic("Int"))
                     },
                     Parameter {
-                        name: "x".into(),
+                        name: ast::Name::simple("x"),
                         type_: Type::named(&Name::intrinsic("Boolean"))
                     },
                 ],

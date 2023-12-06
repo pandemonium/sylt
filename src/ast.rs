@@ -101,16 +101,13 @@ impl FunctionDeclarator {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
-    pub name: String,
+    pub name: Name,
     pub type_: Type,
 }
 
 impl Parameter {
-    pub fn new(name: &str, type_: Type) -> Self {
-        Self {
-            name: name.into(),
-            type_,
-        }
+    pub fn new(name: Name, type_: Type) -> Self {
+        Self { name, type_ }
     }
 
     pub fn get_type(&self) -> &Type {
@@ -118,12 +115,12 @@ impl Parameter {
     }
 
     pub fn get_name(&self) -> &str {
-        &self.name
+        self.name.local_name()
     }
 }
 
-// Deconstruct these into 
-// Statement::Let(LetStatement) so that I can do things 
+// Deconstruct these into
+// Statement::Let(LetStatement) so that I can do things
 // with separate types later?
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
@@ -152,7 +149,7 @@ pub struct Block {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Literal(Constant),
-    Variable(Name),
+    Variable(Select),
     ApplyInfix {
         lhs: Box<Expression>,
         symbol: Operator,
@@ -206,29 +203,27 @@ impl Name {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Select {
     Type(Name),
-    Function(Name),
-    Intrinsic(Name),
+    Value(Name),
 }
 
 impl Select {
     pub fn name(&self) -> &Name {
         match self {
-            Select::Type(name) => name,
-            Select::Function(name) => name,
-            Select::Intrinsic(name) => name,
+            Self::Type(name) => name,
+            Self::Value(name) => name,
         }
     }
 
-    pub fn as_function(&self) -> Option<&Name> {
-        if let Self::Function(name) = self {
+    pub fn as_value(&self) -> Option<&Name> {
+        if let Self::Value(name) = self {
             Some(name)
         } else {
             None
         }
     }
 
-    pub fn as_intrinsic(&self) -> Option<&Name> {
-        if let Self::Intrinsic(name) = self {
+    pub fn as_type(&self) -> Option<&Name> {
+        if let Self::Type(name) = self {
             Some(name)
         } else {
             None
@@ -349,13 +344,13 @@ impl Operator {
     }
 
     pub fn select(&self) -> Select {
-        Select::Intrinsic(self.name())
+        Select::Value(self.name())
     }
 
     pub fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new("lhs", Type::Number),
-            Parameter::new("rhs", Type::Number),
+            Parameter::new(Name::simple("lhs"), Type::Number),
+            Parameter::new(Name::simple("rhs"), Type::Number),
         ]
     }
 
@@ -403,7 +398,7 @@ mod tests {
                 body: Block {
                     statements: vec![
                         Statement::Expression(Expression::Apply {
-                            symbol: Select::Intrinsic(Name::intrinsic("print_line")),
+                            symbol: Select::Value(Name::intrinsic("print_line")),
                             arguments: vec![Expression::Literal(Constant::Text(
                                 "Hello, world".into(),
                             ))],
@@ -414,7 +409,7 @@ mod tests {
             })],
             entry_point: Block {
                 statements: vec![Statement::Expression(Expression::Apply {
-                    symbol: Select::Function(Name::simple("print_hello_world")),
+                    symbol: Select::Value(Name::simple("print_hello_world")),
                     arguments: vec![],
                 })],
             },

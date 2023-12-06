@@ -143,7 +143,7 @@ pub mod io {
                 _otherwise => Err(interpreter::Error::ExpectedArguments(
                     ast::Name::simple("print_line"),
                     vec![ast::Parameter::new(
-                        "line",
+                        ast::Name::simple("line"),
                         ast::Type::named(&ast::Name::simple("Text")),
                     )],
                 )),
@@ -157,7 +157,7 @@ pub mod io {
         let functions = vec![ast::IntrinsicFunctionDeclarator::new(
             &ast::Name::intrinsic("print_line"),
             &[ast::Parameter::new(
-                "line",
+                ast::Name::simple("line"),
                 ast::Type::named(&ast::Name::simple("Text")),
             )],
             ast::Type::Unit,
