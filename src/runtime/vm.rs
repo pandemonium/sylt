@@ -1,6 +1,5 @@
 // Stfu for a second, k?
 #![allow(dead_code)]
-use super::intrinsics::artithmetic;
 use crate::ast;
 use core::fmt;
 use std::cell;
@@ -8,20 +7,18 @@ use std::cell;
 static mut INTERPRETED_BYTECODE_COUNT: usize = 0;
 
 pub struct Interpreter {
-    executable: Executable,
-    stack: cell::RefCell<Vec<Value>>,
+    stack: Vec<Value>,
 }
 
 impl Interpreter {
-    pub fn new(executable: Executable) -> Self {
+    pub fn new() -> Self {
         Self {
-            executable,
-            stack: cell::RefCell::new(vec![]),
+            stack: Vec::with_capacity(16),
         }
     }
 
-    pub fn run(self) -> Value {
-        let return_value = self.run_automat(self.executable.entry_point());
+    pub fn run(mut self, executable: Executable) -> Value {
+        let return_value = self.run_automat(&executable, executable.entry_point());
 
         let count = unsafe { INTERPRETED_BYTECODE_COUNT };
         println!("Interpreted {count} bytecodes.");
@@ -29,76 +26,83 @@ impl Interpreter {
         return_value
     }
 
-    fn run_automat(&self, start: Label) -> Value {
+    fn run_automat(&mut self, executable: &Executable, start: Label) -> Value {
         let mut frame = ActivationFrame::default();
         frame.continue_at(start);
 
         loop {
-            let block = match frame.continuation {
+            let block_id = match frame.continuation {
                 Continuation::Return(return_value) => break return_value,
-                Continuation::Resume(Label(block_id)) => self.executable.resolve_block(block_id),
+                Continuation::Resume(Label(block_id)) => block_id,
             };
 
-            for bytecode in block.instruction_stream() {
-                unsafe {
-                    INTERPRETED_BYTECODE_COUNT += 1;
-                }
-                self.interpret(&mut frame, bytecode)
-            }
+            let block = executable.resolve_block(block_id);
+            self.interpret_block(executable, &mut frame, block);
         }
     }
 
-    fn push(&self, val: Value) {
-        self.stack.borrow_mut().push(val)
+    fn interpret_block(
+        &mut self,
+        executable: &Executable,
+        frame: &mut ActivationFrame,
+        block: &BasicBlock,
+    ) {
+        for bytecode in block.instruction_stream() {
+            unsafe {
+                INTERPRETED_BYTECODE_COUNT += 1;
+            }
+            self.interpret(executable, frame, bytecode)
+        }
     }
 
-    fn pop(&self) -> Option<Value> {
-        self.stack.borrow_mut().pop()
+    fn duplicate_top_of_stack(&mut self) {
+        let index = self.stack.len() - 1;
+        let element = self.stack[index].clone();
+        self.stack.push(element);
     }
 
-    fn duplicate_top_of_stack(&self) {
-        let mut stack = self.stack.borrow_mut();
-        let index = stack.len() - 1;
-        let element = stack[index].clone();
-        stack.push(element);
-    }
-
-    fn interpret(&self, frame: &mut ActivationFrame, bytecode: &Bytecode) {
+    fn interpret(
+        &mut self,
+        executable: &Executable,
+        frame: &mut ActivationFrame,
+        bytecode: &Bytecode,
+    ) {
         match bytecode {
-            Bytecode::LoadConstant(constant) => self.push(constant.clone()),
-            Bytecode::LoadLocal(index) => self.push(frame.get_local(*index).clone()),
-            Bytecode::StoreLocal(index) => frame.put_local(
-                *index,
-                self.pop()
-                    .expect(&format!("Value on the stack to put in local {index}")),
-            ),
+            Bytecode::LoadConstant(constant) => self.stack.push(constant.clone()),
+            Bytecode::LoadLocal(index) => self.stack.push(frame.get_local(*index).clone()),
+            Bytecode::StoreLocal(index) => {
+                frame.put_local(*index, self.stack.pop().expect("expected 1 stack operands"))
+            }
             Bytecode::Arithmetic(op) => {
                 // make a thing that will pop a specific type.
                 // pop the first, require the second to have the same type
-                
                 let (rhs, lhs) = self
+                    .stack
                     .pop()
-                    .zip(self.pop())
-                    .expect("Two values on the stack to compute {op}");
-                self.push(lhs.apply(op, rhs))
+                    .zip(self.stack.pop())
+                    .expect("expected 2 stack operands");
+                self.stack.push(lhs.apply(op, rhs))
             }
             Bytecode::Logic(_) => todo!(),
             Bytecode::Invoke(index) => {
-                let target = &self.executable.resolve_function_target(*index).target;
-                let return_value = self.run_automat(*target);
-                self.push(return_value)
+                let target = executable.resolve_function_target(*index).target;
+                let return_value = self.run_automat(executable, target);
+                self.stack.push(return_value)
             }
             Bytecode::Return => {
-                let return_value = self.pop().expect("no value to return on the stack");
+                let return_value = self.stack.pop().expect("no value to return on the stack");
                 frame.make_return(return_value)
             }
             Bytecode::Dup => self.duplicate_top_of_stack(),
             Bytecode::Discard => {
-                self.pop().expect("Discarding a non-existent top of stack");
+                self.stack
+                    .pop()
+                    .expect("Discarding a non-existent top of stack");
             }
             Bytecode::Jump(target) => frame.continue_at(*target),
             Bytecode::ConditionalJump(consequent, alternate) => {
                 let top = self
+                    .stack
                     .pop()
                     .expect("Expected a (boolean) at the top of the stack");
                 if let Value::Boolean(test) = top {
@@ -195,10 +199,19 @@ impl fmt::Display for Function {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ActivationFrame {
     locals: Vec<Option<Value>>,
     continuation: Continuation,
+}
+
+impl Default for ActivationFrame {
+    fn default() -> Self {
+        Self {
+            locals: vec![None; 8],
+            continuation: Continuation::default(),
+        }
+    }
 }
 
 impl ActivationFrame {
@@ -249,8 +262,8 @@ pub enum Value {
 }
 
 fn try_compute(lhs: &Value, op: &AluOp, rhs: &Value) -> Option<Value> {
-    use Value::*;
     use AluOp::*;
+    use Value::*;
 
     // Can this be done golfer than this?
     match (lhs, op, rhs) {
@@ -293,21 +306,14 @@ fn try_compute(lhs: &Value, op: &AluOp, rhs: &Value) -> Option<Value> {
         (Float(lhs), Gte, Float(rhs)) => Some(Boolean(lhs >= rhs)),
         (Int(lhs), Gte, Int(rhs)) => Some(Boolean(lhs >= rhs)),
 
-//        (Boolean(lhs), And, Boolean(rhs)) => Some(Boolean(*lhs && *rhs)),
-//        (Boolean(lhs), Or, Boolean(rhs)) => Some(Boolean(*lhs || *rhs)),
-
+        //        (Boolean(lhs), And, Boolean(rhs)) => Some(Boolean(*lhs && *rhs)),
+        //        (Boolean(lhs), Or, Boolean(rhs)) => Some(Boolean(*lhs || *rhs)),
         _otherwise => None,
     }
 }
 
 impl Value {
     fn apply(self, op: &AluOp, rhs: Self) -> Self {
-        // "Call out" into the AST interpreter
-        //Re-write this.
-//                artithmetic::operator::apply(&self.into(), &op.into(), &rhs.into())
-//                    .expect(&format!("Undefined operator sequence"))
-//                    .into();
-
         try_compute(&self, &op, &rhs).expect("Not applicable")
     }
 }

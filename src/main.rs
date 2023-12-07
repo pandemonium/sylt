@@ -20,7 +20,7 @@ fn main() -> Result<(), Error> {
     }
 
     {
-        return fibonacci(35);
+        return fibonacci(37);
     }
     "#;
 
@@ -36,7 +36,7 @@ fn main() -> Result<(), Error> {
 
     let program = syntax::analyze(&source.chars().collect::<Vec<_>>())?;
     let executable = vm::compile(program);
-    let return_value = vm::Interpreter::new(executable).run();
+    let return_value = vm::Interpreter::new().run(executable);
     println!("Returns: {return_value}");
 
 //    println!("{executable}");
