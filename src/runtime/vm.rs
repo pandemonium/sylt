@@ -1,18 +1,108 @@
 // Stfu for a second, k?
 #![allow(dead_code)]
 use core::fmt;
+use std::{cell, collections::VecDeque};
 
 use crate::ast;
 
-struct Interpreter {
-    stack: Vec<Value>,
+use super::intrinsics::artithmetic;
+
+pub struct Interpreter {
+    executable: Executable,
+    stack: cell::RefCell<Vec<Value>>,
 }
 
 impl Interpreter {
-    fn run(self, exe: Executable) -> Option<Value> {
-        let frame = ActivationFrame::default();
+    pub fn new(executable: Executable) -> Self {
+        Self {
+            executable,
+            stack: cell::RefCell::new(vec![]),
+        }
+    }
 
-        todo!()
+    pub fn run(self) -> Value {
+        self.run_automat(self.executable.entry_point())
+    }
+
+    fn run_automat(&self, start: Label) -> Value {
+        let mut frame = ActivationFrame::default();
+        frame.continue_at(start);
+
+        loop {
+            let block = match frame.continuation {
+                Continuation::Return(return_value) => break return_value,
+                Continuation::Resume(Label(block_id)) => self.executable.resolve_block(block_id),
+            };
+
+            for bytecode in block.instruction_stream() {
+                self.interpret(&mut frame, bytecode)
+            }
+        }
+    }
+
+    fn push(&self, val: Value) {
+        self.stack.borrow_mut().push(val)
+    }
+
+    fn pop(&self) -> Option<Value> {
+        self.stack.borrow_mut().pop()
+    }
+
+    fn duplicate_top_of_stack(&self) {
+        let mut stack = self.stack.borrow_mut();
+        let index = stack.len() - 1;
+        let element = stack[index].clone();
+        stack.push(element);
+    }
+
+    fn interpret(&self, frame: &mut ActivationFrame, bytecode: &Bytecode) {
+        match bytecode {
+            Bytecode::LoadConstant(constant) => self.push(constant.clone()),
+            Bytecode::LoadLocal(index) => self.push(frame.get_local(*index).clone()),
+            Bytecode::StoreLocal(index) => frame.put_local(
+                *index,
+                self.pop()
+                    .expect(&format!("Value on the stack to put in local {index}")),
+            ),
+            Bytecode::Arithmetic(op) => {
+                // make a thing that will pop a specific type.
+                // pop the first, require the second to have the same type
+                let (rhs, lhs) = self
+                    .pop()
+                    .zip(self.pop())
+                    .expect("Two values on the stack to compute {op}");
+                self.push(lhs.apply(*op, rhs))
+            }
+            Bytecode::Logic(_) => todo!(),
+            Bytecode::Invoke(index) => {
+                let target = &self.executable.resolve_function_target(*index).target;
+                let return_value = self.run_automat(*target);
+                self.push(return_value)
+            }
+            Bytecode::Return => {
+                let return_value = self.pop().expect("no value to return on the stack");
+                frame.make_return(return_value)
+            }
+            Bytecode::Dup => self.duplicate_top_of_stack(),
+            Bytecode::Discard => {
+                self.pop().expect("Discarding a non-existent top of stack");
+            }
+            Bytecode::Jump(target) => frame.continue_at(*target),
+            Bytecode::ConditionalJump(consequent, alternate) => {
+                let top = self
+                    .pop()
+                    .expect("Expected a (boolean) at the top of the stack");
+                if let Value::Boolean(test) = top {
+                    if test {
+                        frame.continue_at(*consequent);
+                    } else {
+                        frame.continue_at(*alternate);
+                    }
+                } else {
+                    panic!("Mis-typed if statement.")
+                }
+            }
+        }
     }
 }
 
@@ -22,12 +112,26 @@ pub fn compile(program: ast::Program) -> Executable {
     compile.link()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Executable {
     constants: Vec<Value>,
     functions: Vec<Function>,
     entry_point_block_id: usize,
     blocks: Vec<BasicBlock>,
+}
+
+impl Executable {
+    fn resolve_function_target(&self, index: u16) -> &Function {
+        &self.functions[index as usize]
+    }
+
+    fn entry_point(&self) -> Label {
+        Label(self.entry_point_block_id as u16)
+    }
+
+    fn resolve_block(&self, id: u16) -> &BasicBlock {
+        &self.blocks[id as usize]
+    }
 }
 
 impl fmt::Display for Executable {
@@ -69,34 +173,114 @@ impl fmt::Display for Executable {
 #[derive(Debug)]
 struct Function {
     name: ast::Name,
-    body: BasicBlock,
+    target: Label,
 }
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Function { name, body } = self;
-        writeln!(f, "{}", name.local_name())?;
-        for bytecode in body.instruction_stream() {
-            writeln!(f, "\t{bytecode}")?;
-        }
-        Ok(())
+        let Function {
+            name,
+            target: Label(target),
+        } = self;
+        writeln!(f, "{}, at #{target}", name.local_name())
     }
 }
 
 #[derive(Debug, Default)]
 struct ActivationFrame {
-    locals: Vec<Value>,
-    stack: Vec<Value>,
-    return_value: Option<Value>,
+    locals: Vec<Option<Value>>,
+    continuation: Continuation,
 }
 
-#[derive(Clone, Debug)]
-enum Value {
+impl ActivationFrame {
+    fn put_local(&mut self, index: u8, value: Value) {
+        if index as usize >= self.locals.len() {
+            for _ in self.locals.len()..=(index as usize) {
+                // Go for Option stead?
+                self.locals.push(None);
+            }
+        }
+        self.locals[index as usize] = Some(value);
+    }
+
+    fn get_local(&self, index: u8) -> &Value {
+        if let Some(x) = &self.locals[index as usize] {
+            &x
+        } else {
+            panic!("Reading unitialzed local slot")
+        }
+    }
+
+    fn make_return(&mut self, val: Value) {
+        self.continuation = Continuation::Return(val)
+    }
+
+    fn continue_at(&mut self, target: Label) {
+        self.continuation = Continuation::Resume(target)
+    }
+}
+
+#[derive(Debug)]
+enum Continuation {
+    Return(Value),
+    Resume(Label),
+}
+
+impl Default for Continuation {
+    fn default() -> Self {
+        Self::Return(Value::default())
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum Value {
     Int(i64),
     Float(f64),
     Boolean(bool),
     Text(Box<str>),
+    #[default]
     Unit,
+}
+
+impl Value {
+    fn apply(self, op: AluOp, rhs: Self) -> Self {
+        // "Call out" into the AST interpreter
+        // Yeah yeah, wtf.
+        // Re-write this.
+        artithmetic::operator::apply(&self.into(), &op.into(), &rhs.into())
+            .expect(&format!("Undefined operator sequence"))
+            .into()
+    }
+}
+
+impl From<AluOp> for ast::Operator {
+    fn from(value: AluOp) -> Self {
+        match value {
+            AluOp::Add => Self::Plus,
+            AluOp::Subtract => Self::Minus,
+            AluOp::Multiply => Self::Times,
+            AluOp::Divide => Self::Divides,
+            AluOp::Modulo => Self::Modulo,
+            AluOp::Lte => Self::LTE,
+            AluOp::Gte => Self::GTE,
+            AluOp::Lt => Self::LT,
+            AluOp::Gt => Self::GT,
+            AluOp::Equals => Self::Equals,
+            AluOp::NotEqual => Self::NotEqual,
+        }
+    }
+}
+
+impl From<Value> for ast::Constant {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Int(x) => Self::Int(x),
+            Value::Float(x) => Self::Float(x),
+            Value::Boolean(x) => Self::Boolean(x),
+            Value::Text(x) => Self::Text(x.into_string()),
+            Value::Unit => Self::Void,
+        }
+    }
 }
 
 impl fmt::Display for Value {
@@ -223,7 +407,7 @@ impl Generator {
                 .iter()
                 .map(|(name, target)| Function {
                     name: name.clone(),
-                    body: self.lookup_block(&target).clone(),
+                    target: *target,
                 })
                 .collect(),
             constants: self.constants.into_iter().map(Into::into).collect(),
@@ -347,9 +531,6 @@ impl Compile {
                 }
             }
             _otherwise => todo!(),
-            //            ast::Declaration::IntrinsicFunction(_) => todo!(),
-            //            ast::Declaration::Operator(_) => todo!(),
-            //            ast::Declaration::Static { name, type_, value } => todo!(),
         }
     }
 
@@ -370,8 +551,7 @@ impl Compile {
     fn statement(&mut self, statement: ast::Statement) {
         match statement {
             ast::Statement::Let { lhs, rhs } => {
-                // This is not correct. The first let gets 0, the second 1, etc.
-                let index = self.0.intern_identifier(lhs);
+                let index = self.0.allocate_local_slot(ast::Name::simple(&lhs));
                 self.expression(rhs);
                 self.0.emit(Bytecode::StoreLocal(index as u8))
             }

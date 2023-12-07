@@ -20,29 +20,30 @@ fn main() -> Result<(), Error> {
     }
 
     {
-        return fibonacci(27);
+        return fibonacci(35);
     }
     "#;
 
 //    let source = r#"
-//    fn foo() -> Int {
-//        while 1 < 2 {
-//            3 + 4;
-//        }
+//    fn quux(x: Int) -> Int {
+//        return x;
 //    }
 //
 //    {
-//        foo();
+//        return quux(3 - 1);
 //    }
 //    "#;
 
     let program = syntax::analyze(&source.chars().collect::<Vec<_>>())?;
-    let exe = vm::compile(program);
-    println!("{exe}");
+    let executable = vm::compile(program);
+    let return_value = vm::Interpreter::new(executable).run();
+    println!("Returns: {return_value}");
 
-    //    let interpreter = Interpreter::new(program, intrinsics::initialize());
-    //    let return_value = interpreter.run()?;
-    //    println!("{:#?}", return_value);
+//    println!("{executable}");
+
+//    let interpreter = Interpreter::new(program, intrinsics::initialize());
+//    let return_value = interpreter.run()?;
+//    println!("{:#?}", return_value);
 
     Ok(())
 }
