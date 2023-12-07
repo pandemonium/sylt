@@ -1,11 +1,11 @@
 // Stfu for a second, k?
 #![allow(dead_code)]
-use core::fmt;
-use std::{cell, collections::VecDeque};
-
-use crate::ast;
-
 use super::intrinsics::artithmetic;
+use crate::ast;
+use core::fmt;
+use std::cell;
+
+static mut INTERPRETED_BYTECODE_COUNT: usize = 0;
 
 pub struct Interpreter {
     executable: Executable,
@@ -21,7 +21,12 @@ impl Interpreter {
     }
 
     pub fn run(self) -> Value {
-        self.run_automat(self.executable.entry_point())
+        let return_value = self.run_automat(self.executable.entry_point());
+
+        let count = unsafe { INTERPRETED_BYTECODE_COUNT };
+        println!("Interpreted {count} bytecodes.");
+
+        return_value
     }
 
     fn run_automat(&self, start: Label) -> Value {
@@ -35,6 +40,9 @@ impl Interpreter {
             };
 
             for bytecode in block.instruction_stream() {
+                unsafe {
+                    INTERPRETED_BYTECODE_COUNT += 1;
+                }
                 self.interpret(&mut frame, bytecode)
             }
         }
@@ -67,11 +75,12 @@ impl Interpreter {
             Bytecode::Arithmetic(op) => {
                 // make a thing that will pop a specific type.
                 // pop the first, require the second to have the same type
+                
                 let (rhs, lhs) = self
                     .pop()
                     .zip(self.pop())
                     .expect("Two values on the stack to compute {op}");
-                self.push(lhs.apply(*op, rhs))
+                self.push(lhs.apply(op, rhs))
             }
             Bytecode::Logic(_) => todo!(),
             Bytecode::Invoke(index) => {
@@ -194,11 +203,8 @@ struct ActivationFrame {
 
 impl ActivationFrame {
     fn put_local(&mut self, index: u8, value: Value) {
-        if index as usize >= self.locals.len() {
-            for _ in self.locals.len()..=(index as usize) {
-                // Go for Option stead?
-                self.locals.push(None);
-            }
+        for _ in self.locals.len()..=(index as usize) {
+            self.locals.push(None)
         }
         self.locals[index as usize] = Some(value);
     }
@@ -242,14 +248,67 @@ pub enum Value {
     Unit,
 }
 
+fn try_compute(lhs: &Value, op: &AluOp, rhs: &Value) -> Option<Value> {
+    use Value::*;
+    use AluOp::*;
+
+    // Can this be done golfer than this?
+    match (lhs, op, rhs) {
+        (Float(lhs), Add, Float(rhs)) => Some(Float(lhs + rhs)),
+        (Int(lhs), Add, Int(rhs)) => Some(Int(lhs + rhs)),
+
+        (Float(lhs), Subtract, Float(rhs)) => Some(Float(lhs - rhs)),
+        (Int(lhs), Subtract, Int(rhs)) => Some(Int(lhs - rhs)),
+
+        (Float(lhs), Multiply, Float(rhs)) => Some(Float(lhs * rhs)),
+        (Int(lhs), Multiply, Int(rhs)) => Some(Int(lhs * rhs)),
+
+        (Float(lhs), Divide, Float(rhs)) => Some(Float(lhs / rhs)),
+        (Int(lhs), Divide, Int(rhs)) => Some(Int(lhs / rhs)),
+
+        (Float(lhs), Modulo, Float(rhs)) => Some(Float(lhs % rhs)),
+        (Int(lhs), Modulo, Int(rhs)) => Some(Int(lhs % rhs)),
+
+        (Float(lhs), Lt, Float(rhs)) => Some(Boolean(lhs < rhs)),
+        (Int(lhs), Lt, Int(rhs)) => Some(Boolean(lhs < rhs)),
+
+        (Float(lhs), Equals, Float(rhs)) => Some(Boolean(lhs == rhs)),
+        (Int(lhs), Equals, Int(rhs)) => Some(Boolean(lhs == rhs)),
+        (Boolean(lhs), Equals, Boolean(rhs)) => Some(Boolean(lhs == rhs)),
+        (Text(lhs), Equals, Text(rhs)) => Some(Boolean(lhs == rhs)),
+        (Unit, Equals, Unit) => Some(Boolean(true)),
+
+        (Float(lhs), NotEqual, Float(rhs)) => Some(Boolean(lhs != rhs)),
+        (Int(lhs), NotEqual, Int(rhs)) => Some(Boolean(lhs != rhs)),
+        (Boolean(lhs), NotEqual, Boolean(rhs)) => Some(Boolean(lhs != rhs)),
+        (Text(lhs), NotEqual, Text(rhs)) => Some(Boolean(lhs != rhs)),
+        (Unit, NotEqual, Unit) => Some(Boolean(false)),
+
+        (Float(lhs), Gt, Float(rhs)) => Some(Boolean(lhs > rhs)),
+        (Int(lhs), Gt, Int(rhs)) => Some(Boolean(lhs > rhs)),
+
+        (Float(lhs), Lte, Float(rhs)) => Some(Boolean(lhs <= rhs)),
+        (Int(lhs), Lte, Int(rhs)) => Some(Boolean(lhs <= rhs)),
+
+        (Float(lhs), Gte, Float(rhs)) => Some(Boolean(lhs >= rhs)),
+        (Int(lhs), Gte, Int(rhs)) => Some(Boolean(lhs >= rhs)),
+
+//        (Boolean(lhs), And, Boolean(rhs)) => Some(Boolean(*lhs && *rhs)),
+//        (Boolean(lhs), Or, Boolean(rhs)) => Some(Boolean(*lhs || *rhs)),
+
+        _otherwise => None,
+    }
+}
+
 impl Value {
-    fn apply(self, op: AluOp, rhs: Self) -> Self {
+    fn apply(self, op: &AluOp, rhs: Self) -> Self {
         // "Call out" into the AST interpreter
-        // Yeah yeah, wtf.
-        // Re-write this.
-        artithmetic::operator::apply(&self.into(), &op.into(), &rhs.into())
-            .expect(&format!("Undefined operator sequence"))
-            .into()
+        //Re-write this.
+//                artithmetic::operator::apply(&self.into(), &op.into(), &rhs.into())
+//                    .expect(&format!("Undefined operator sequence"))
+//                    .into();
+
+        try_compute(&self, &op, &rhs).expect("Not applicable")
     }
 }
 
