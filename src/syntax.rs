@@ -61,7 +61,7 @@ pub fn parse_expression(input: &str) -> types::Result<ast::Expression> {
 struct Thunk<A>(marker::PhantomData<A>);
 
 fn literal() -> impl Parser<In = lex::Token, Out = ast::Expression> {
-    expect!(lex::Token::Literal(lit) => into_constant(&lit)).map(ast::Expression::Literal)
+    expect!(lex::Token::Literal(lit) => into_constant(lit)).map(ast::Expression::Literal)
 }
 
 fn into_constant(lit: &lex::Literal) -> ast::Constant {
@@ -93,7 +93,7 @@ impl Parser for Thunk<ast::Expression> {
     type In = lex::Token;
     type Out = ast::Expression;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         expression_inner().parse(input)
     }
 }
@@ -201,7 +201,7 @@ impl Parser for Thunk<ast::Statement> {
     type In = lex::Token;
     type Out = ast::Statement;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let ParseResult { state, parsed } = statement_inner().parse(input);
 
         if let Some(parsed) = parsed {

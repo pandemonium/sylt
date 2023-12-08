@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use crate::ast;
 use core::fmt;
-use std::cell;
+use std::rc;
 
 static mut INTERPRETED_BYTECODE_COUNT: usize = 0;
 
@@ -13,7 +13,7 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         Self {
-            stack: Vec::with_capacity(16),
+            stack: Vec::with_capacity(64),
         }
     }
 
@@ -30,15 +30,16 @@ impl Interpreter {
         let mut frame = ActivationFrame::default();
         frame.continue_at(start);
 
-        loop {
-            let block_id = match frame.continuation {
-                Continuation::Return(return_value) => break return_value,
-                Continuation::Resume(Label(block_id)) => block_id,
-            };
-
+        while let Continuation::Resume(Label(block_id)) = frame.continuation {
             let block = executable.resolve_block(block_id);
-            self.interpret_block(executable, &mut frame, block);
+            self.interpret_block(executable, &mut frame, block)
         }
+
+        let Continuation::Return(return_value) = frame.continuation else {
+            unreachable!()
+        };
+
+        return_value
     }
 
     fn interpret_block(
@@ -76,18 +77,26 @@ impl Interpreter {
             Bytecode::Arithmetic(op) => {
                 // make a thing that will pop a specific type.
                 // pop the first, require the second to have the same type
-                let (rhs, lhs) = self
-                    .stack
-                    .pop()
-                    .zip(self.stack.pop())
-                    .expect("expected 2 stack operands");
+                let rhs = self.stack.pop().expect("expected 1 stack operands");
+                let lhs = self.stack.pop().expect("expected 1 stack operands");
                 self.stack.push(lhs.apply(op, rhs))
             }
-            Bytecode::Logic(_) => todo!(),
             Bytecode::Invoke(index) => {
                 let target = executable.resolve_function_target(*index).target;
                 let return_value = self.run_automat(executable, target);
                 self.stack.push(return_value)
+            }
+            Bytecode::InvokeBuiltin(index) => {
+                let target = executable.resolve_builtin_target(*index);
+                let mut arguments = Vec::with_capacity(target.prototype.len());
+                for _ in &target.prototype {
+                    // Check and compare types here.
+                    // insert(0, ...) because the functions expect the parameters
+                    // in their natural order; popping them off a stack reverses that
+                    arguments.insert(0, self.stack.pop().unwrap());
+                }
+                let return_value = target.stub.call(&arguments).expect("Call failed");
+                self.stack.push(return_value);
             }
             Bytecode::Return => {
                 let return_value = self.stack.pop().expect("no value to return on the stack");
@@ -121,6 +130,11 @@ impl Interpreter {
 
 pub fn compile(program: ast::Program) -> Executable {
     let mut compile = Compile::default();
+    compile.register_builtin(BuiltinFunction {
+        name: ast::Name::simple("print_line"),
+        prototype: vec![ast::Type::named(&ast::Name::intrinsic("Text"))],
+        stub: rc::Rc::new(PrintLine),
+    });
     compile.program(program);
     compile.link()
 }
@@ -129,6 +143,7 @@ pub fn compile(program: ast::Program) -> Executable {
 pub struct Executable {
     constants: Vec<Value>,
     functions: Vec<Function>,
+    builtins: Vec<BuiltinFunction>,
     entry_point_block_id: usize,
     blocks: Vec<BasicBlock>,
 }
@@ -136,6 +151,10 @@ pub struct Executable {
 impl Executable {
     fn resolve_function_target(&self, index: u16) -> &Function {
         &self.functions[index as usize]
+    }
+
+    fn resolve_builtin_target(&self, index: u16) -> &BuiltinFunction {
+        &self.builtins[index as usize]
     }
 
     fn entry_point(&self) -> Label {
@@ -147,11 +166,35 @@ impl Executable {
     }
 }
 
+#[derive(Debug)]
+struct BuiltinFunction {
+    name: ast::Name,
+    prototype: Vec<ast::Type>,
+    stub: rc::Rc<dyn BuiltinStub>,
+}
+
+trait BuiltinStub: fmt::Debug {
+    fn call(&self, parameters: &[Value]) -> Option<Value>;
+}
+
+#[derive(Debug)]
+struct PrintLine;
+
+impl BuiltinStub for PrintLine {
+    fn call(&self, parameters: &[Value]) -> Option<Value> {
+        for p in parameters {
+            println!("{p}")
+        }
+        Some(Value::Unit)
+    }
+}
+
 impl fmt::Display for Executable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Executable {
             constants,
             functions,
+            builtins,
             entry_point_block_id,
             blocks,
         } = self;
@@ -330,6 +373,8 @@ impl From<AluOp> for ast::Operator {
             AluOp::Gte => Self::GTE,
             AluOp::Lt => Self::LT,
             AluOp::Gt => Self::GT,
+            AluOp::And => Self::And,
+            AluOp::Or => Self::Or,
             AluOp::Equals => Self::Equals,
             AluOp::NotEqual => Self::NotEqual,
         }
@@ -382,9 +427,8 @@ enum Bytecode {
     StoreLocal(u8),
 
     Arithmetic(AluOp),
-    Logic(LogicOp),
 
-    // InvokeBuiltin(u16)   -- e.g.: println
+    InvokeBuiltin(u16),
     Invoke(u16),
     Return,
     Dup,
@@ -421,9 +465,10 @@ impl fmt::Display for Bytecode {
             Bytecode::Arithmetic(AluOp::Gt) => write!(f, "gt"),
             Bytecode::Arithmetic(AluOp::Lte) => write!(f, "lte"),
             Bytecode::Arithmetic(AluOp::Gte) => write!(f, "gte"),
-            Bytecode::Logic(LogicOp::And) => write!(f, "and"),
-            Bytecode::Logic(LogicOp::Or) => write!(f, "or"),
+            Bytecode::Arithmetic(AluOp::And) => write!(f, "and"),
+            Bytecode::Arithmetic(AluOp::Or) => write!(f, "or"),
             Bytecode::Invoke(x) => write!(f, "invoke\t\t{x}"),
+            Bytecode::InvokeBuiltin(x) => write!(f, "invoke_builtin\t{x}"),
             Bytecode::Return => write!(f, "ret"),
             Bytecode::Dup => write!(f, "dup"),
             Bytecode::Discard => write!(f, "discard"),
@@ -446,10 +491,6 @@ enum AluOp {
     Gt,
     Equals,
     NotEqual,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum LogicOp {
     And,
     Or,
 }
@@ -462,6 +503,7 @@ struct Generator {
     current_block_id: usize,
     blocks: Vec<BasicBlock>,
     locals: Vec<ast::Name>,
+    builtins: Vec<BuiltinFunction>,
 }
 
 impl Generator {
@@ -475,6 +517,7 @@ impl Generator {
                     target: *target,
                 })
                 .collect(),
+            builtins: self.builtins,
             constants: self.constants.into_iter().map(Into::into).collect(),
             entry_point_block_id: self.current_block_id,
             blocks: self.blocks,
@@ -491,6 +534,14 @@ impl Generator {
     fn lookup_function_index(&self, name: &ast::Select) -> Option<usize> {
         name.as_value()
             .and_then(|name| self.functions.iter().position(|(nm, _)| nm == name))
+    }
+
+    fn lookup_builtin_index(&self, name: &ast::Select) -> Option<usize> {
+        name.as_value().and_then(|name| {
+            self.builtins
+                .iter()
+                .position(|builtin| &builtin.name == name)
+        })
     }
 
     fn make_block(&mut self) -> u16 {
@@ -554,6 +605,10 @@ impl Compile {
         self.0.into_executable()
     }
 
+    fn register_builtin(&mut self, builtin: BuiltinFunction) {
+        self.0.builtins.push(builtin)
+    }
+
     fn program(&mut self, program: ast::Program) {
         for decl in program.declarations {
             self.declaration(decl)
@@ -562,7 +617,13 @@ impl Compile {
         let entry_point = self.make_label();
         self.select_target(entry_point);
 
-        self.block(program.entry_point)
+        self.block(program.entry_point);
+
+        if !self.0.current_block().is_terminated() {
+            println!("Adding a return to block {}", self.0.current_block_id);
+            self.0.emit(Bytecode::LoadConstant(Value::Unit));
+            self.0.emit(Bytecode::Return)
+        }
     }
 
     fn declaration(&mut self, declaration: ast::Declaration) {
@@ -585,13 +646,8 @@ impl Compile {
                 println!("Current block: {}", self.0.current_block_id);
 
                 if !self.0.current_block().is_terminated() {
-                    // Is it this simple? What is the return value?
-                    // Also: how is it determined that a block is terminated?
-                    // Just being terminated is not enough, it has to specifically
-                    // not have a path that does not end in a return. How is that
-                    // even verified?
-                    // Push a void first?
                     println!("Adding a return to block {}", self.0.current_block_id);
+                    self.0.emit(Bytecode::LoadConstant(Value::Unit));
                     self.0.emit(Bytecode::Return)
                 }
             }
@@ -707,6 +763,8 @@ impl Compile {
 
                 if let Some(index) = self.0.lookup_function_index(&symbol) {
                     self.0.emit(Bytecode::Invoke(index as u16))
+                } else if let Some(index) = self.0.lookup_builtin_index(&symbol) {
+                    self.0.emit(Bytecode::InvokeBuiltin(index as u16))
                 } else {
                     panic!("Undefined symbol: {symbol:?}")
                 }
@@ -727,8 +785,8 @@ impl Compile {
             ast::Operator::GTE => Bytecode::Arithmetic(AluOp::Gte),
             ast::Operator::Equals => Bytecode::Arithmetic(AluOp::Equals),
             ast::Operator::NotEqual => Bytecode::Arithmetic(AluOp::NotEqual),
-            ast::Operator::And => Bytecode::Logic(LogicOp::And),
-            ast::Operator::Or => Bytecode::Logic(LogicOp::Or),
+            ast::Operator::And => Bytecode::Arithmetic(AluOp::And),
+            ast::Operator::Or => Bytecode::Arithmetic(AluOp::Or),
         };
 
         self.0.emit(bytecode)

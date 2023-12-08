@@ -17,7 +17,6 @@ impl Position {
         Self {
             line: self.line + 1,
             column: 1,
-            ..self
         }
     }
 
@@ -25,7 +24,6 @@ impl Position {
         Self {
             line: self.line + 1,
             column: 1,
-            ..self
         }
     }
 
@@ -35,12 +33,6 @@ impl Position {
             ..self
         }
     }
-}
-
-// What can this do?
-// An actual parser doesn't have access to this structure.
-struct Error {
-    expectations: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -82,12 +74,12 @@ impl<'a, T> ParseState<'a, T> {
     }
 
     pub fn token(&self) -> &'a [T] {
-        &self.token
+        self.token
     }
 
     pub fn peek(&self) -> Option<&T> {
-        if let &[ref head, ..] = self.remains {
-            Some(&head)
+        if let [head, ..] = self.remains {
+            Some(head)
         } else {
             None
         }
@@ -134,7 +126,7 @@ pub trait Parser: Clone {
     type In: Clone;
     type Out: Clone;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out>;
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out>;
 
     fn map<F, B>(self, f: F) -> Map<F, Self, B>
     where
@@ -242,7 +234,7 @@ where
     type In = P::In;
     type Out = P::Out;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let Positions(inner) = self;
         let mut result = inner.parse(input);
 
@@ -275,7 +267,7 @@ where
     type In = T;
     type Out = Vec<T>;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let Take(length, ..) = self;
         if input.can_advance(length) {
             let input = input.advance(length);
@@ -299,7 +291,7 @@ where
     type In = P::In;
     type Out = B;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let Map(f, inner, ..) = self;
         inner.parse(input).map(f)
     }
@@ -317,7 +309,7 @@ where
     type In = P::In;
     type Out = Q::Out;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let FlatMap(f, inner, ..) = self;
         let ParseResult { state, parsed } = inner.parse(input.clone()).map(f);
 
@@ -339,7 +331,7 @@ where
     type In = P::In;
     type Out = B;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let FilterMap(f, inner, ..) = self;
         if let ParseResult {
             state,
@@ -364,7 +356,7 @@ where
     type In = Q::In;
     type Out = (P::Out, Q::Out);
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let AndAlso(p, q) = self;
         p.flat_map(|x| q.map(|y| (x, y))).parse(input)
     }
@@ -381,7 +373,7 @@ where
     type In = Q::In;
     type Out = Q::Out;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let OrElse(p, q) = self;
 
         if let ParseResult {
@@ -414,7 +406,7 @@ where
     type In = T;
     type Out = T;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let SuchThat(p, ..) = self;
 
         match input.peek() {
@@ -438,7 +430,7 @@ where
     type In = P::In;
     type Out = P::Out;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let When(inner, p) = self;
         let ParseResult { state, parsed } = inner.parse(input);
 
@@ -459,7 +451,7 @@ where
     type In = P::In;
     type Out = Vec<P::Out>;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let ZeroOrMore(inner) = self;
         let mut output = vec![];
         let mut cursor = input;
@@ -493,7 +485,7 @@ where
     type In = S::In;
     type Out = Vec<P::Out>;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let SeparatedBy(inner, separator) = self;
         inner
             .clone()
@@ -522,7 +514,7 @@ where
     type In = I;
     type Out = O;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let Empty(out, ..) = self;
         ParseResult::accepted(input, out)
     }
@@ -538,7 +530,7 @@ where
     type In = P::In;
     type Out = Option<P::Out>;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let Optionally(inner) = self;
         inner.map(Some).or_else(empty(None)).parse(input)
     }
@@ -554,7 +546,7 @@ where
     type In = P::In;
     type Out = Vec<P::Out>;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let OneOrMore(inner) = self;
         inner
             .clone()
@@ -578,7 +570,7 @@ where
     type In = P::In;
     type Out = Q::Out;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let SkipLeft(p, q) = self;
         p.and_also(q).map(snd).parse(input)
     }
@@ -595,7 +587,7 @@ where
     type In = P::In;
     type Out = P::Out;
 
-    fn parse<'a>(self, input: ParseState<'a, Self::In>) -> ParseResult<'a, Self::In, Self::Out> {
+    fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
         let SkipRight(p, q) = self;
         p.and_also(q).map(fst).parse(input)
     }

@@ -96,7 +96,7 @@ impl<'a> ActivationFrame<'a> {
 
     fn apply_intrinsic(
         &self,
-        apply: &ast::Expression,
+        _apply: &ast::Expression,
         symbol: &ast::Name,
         arguments: &[ast::Expression],
     ) -> Result<ast::Constant, Error> {

@@ -22,7 +22,7 @@ pub mod types {
     }
 
     impl Token {
-        fn token_type(&self) -> TokenType {
+        fn _token_type(&self) -> TokenType {
             match self {
                 Token::Separator(..) => TokenType::Separator,
                 Token::Identifier(..) => TokenType::Identifier,
@@ -41,7 +41,7 @@ pub mod types {
     }
 
     pub struct Lexeme {
-        token: Token,
+        _token: Token,
         
     }
 
