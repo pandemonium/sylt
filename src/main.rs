@@ -46,10 +46,10 @@ fn main() -> Result<(), Error> {
 
     let program = syntax::analyze(&source.chars().collect::<Vec<_>>())?;
     let executable = vm::compile(program);
-    let return_value = vm::Interpreter::new().run(executable);
-    println!("Returns: {return_value}");
+    //    let return_value = vm::Interpreter::new().run(executable);
+    //    println!("Returns: {return_value}");
 
-    //    println!("{executable}");
+    println!("{executable}");
 
     //    let interpreter = Interpreter::new(program, intrinsics::initialize());
     //    let return_value = interpreter.run()?;

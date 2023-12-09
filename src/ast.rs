@@ -167,6 +167,12 @@ pub enum Module {
     Intrinsic,
 }
 
+impl fmt::Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct Name {
     pub module: Module,
@@ -197,6 +203,13 @@ impl Name {
             module: Module::Intrinsic,
             name: name.into(),
         }
+    }
+}
+
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Name { module, name } = self;
+        write!(f, "{module}::{name}", )
     }
 }
 
@@ -256,6 +269,16 @@ impl Type {
         self == rhs
             || self == &Self::Number && rhs == &Self::Named(Name::intrinsic("Int"))
             || self == &Self::Number && rhs == &Self::Named(Name::intrinsic("Float"))
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Named(name) => write!(f, "{name}"),
+            Type::Number => write!(f, "<<number>>"),
+            Type::Unit => write!(f, "<<unit>>"),
+        }
     }
 }
 

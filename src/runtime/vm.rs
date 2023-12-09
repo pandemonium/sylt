@@ -173,6 +173,18 @@ struct BuiltinFunction {
     stub: rc::Rc<dyn BuiltinStub>,
 }
 
+impl fmt::Display for BuiltinFunction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let parameter_list = self
+            .prototype
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        write!(f, "{}({parameter_list})", self.name)
+    }
+}
+
 trait BuiltinStub: fmt::Debug {
     fn call(&self, parameters: &[Value]) -> Option<Value>;
 }
@@ -208,6 +220,13 @@ impl fmt::Display for Executable {
         for (index, function) in functions.iter().enumerate() {
             write!(f, "{index}: {function}")?;
         }
+        writeln!(f, "")?;
+
+        writeln!(f, "Builtin functions:")?;
+        for (index, builtin) in builtins.iter().enumerate() {
+            write!(f, "{index}: {builtin}")?;
+        }
+        writeln!(f, "")?;
 
         writeln!(f, "\nEntry point:")?;
         for bytecode in self.blocks[*entry_point_block_id].instruction_stream() {
@@ -349,8 +368,8 @@ fn try_compute(lhs: &Value, op: &AluOp, rhs: &Value) -> Option<Value> {
         (Float(lhs), Gte, Float(rhs)) => Some(Boolean(lhs >= rhs)),
         (Int(lhs), Gte, Int(rhs)) => Some(Boolean(lhs >= rhs)),
 
-        //        (Boolean(lhs), And, Boolean(rhs)) => Some(Boolean(*lhs && *rhs)),
-        //        (Boolean(lhs), Or, Boolean(rhs)) => Some(Boolean(*lhs || *rhs)),
+        (Boolean(lhs), And, Boolean(rhs)) => Some(Boolean(*lhs && *rhs)),
+        (Boolean(lhs), Or, Boolean(rhs)) => Some(Boolean(*lhs || *rhs)),
         _otherwise => None,
     }
 }
@@ -440,7 +459,6 @@ enum Bytecode {
 
 impl Bytecode {
     fn is_block_terminator(&self) -> bool {
-        // Terminate on calls too?
         matches!(
             self,
             Self::Jump(..) | Self::ConditionalJump(..) | Self::Return
@@ -796,20 +814,16 @@ impl Compile {
 #[derive(Clone, Copy, Debug)]
 struct Label(u16);
 
-// Do they have to end in jump or return?
 #[derive(Clone, Debug, Default)]
 struct BasicBlock {
-    // Should it really be this way? What is the point?
     instructions: Vec<Bytecode>,
 }
 
 impl BasicBlock {
-    // What if there's a parse failure here? What does that mean?
     fn instruction_stream(&self) -> &[Bytecode] {
         &self.instructions
     }
 
-    // Ends in Return or Jump.
     fn is_terminated(&self) -> bool {
         self.instructions
             .last()
