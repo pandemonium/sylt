@@ -2,7 +2,7 @@ use std::rc;
 
 use crate::ast;
 
-use super::{model, vm, builtins};
+use super::{builtins, model, vm};
 
 pub fn make_executable(program: ast::Program) -> vm::Executable {
     let mut compile = Compile::default();
@@ -68,7 +68,8 @@ impl Compile {
 
     fn emit_unit_return(&mut self) {
         println!("Adding a return to block {}", self.0.current_block_id);
-        self.0.emit(model::Bytecode::LoadConstant(model::Value::Unit));
+        self.0
+            .emit(model::Bytecode::LoadConstant(model::Value::Unit));
         self.0.emit(model::Bytecode::Return)
     }
 
@@ -163,7 +164,9 @@ impl Compile {
     fn expression(&mut self, expression: ast::Expression) {
         let Compile(gen) = self;
         match expression {
-            ast::Expression::Literal(constant) => gen.emit(model::Bytecode::LoadConstant(constant.into())),
+            ast::Expression::Literal(constant) => {
+                gen.emit(model::Bytecode::LoadConstant(constant.into()))
+            }
             ast::Expression::Variable(name) => {
                 // This is getting to be a pain. What value does this add?
                 let slot = gen
@@ -178,15 +181,19 @@ impl Compile {
                 self.operator(symbol)
             }
             ast::Expression::Apply { symbol, arguments } => {
+                let arg_count = arguments.len();
                 // Where does it validate formals versus actuals?
-                for arg in arguments.into_iter().rev() {
+                for arg in arguments {
                     self.expression(arg)
                 }
 
                 if let Some(index) = self.0.lookup_function_index(&symbol) {
                     self.0.emit(model::Bytecode::Invoke(index as u16))
                 } else if let Some(index) = self.0.lookup_builtin_index(&symbol) {
-                    self.0.emit(model::Bytecode::InvokeBuiltin(index as u16))
+                    self.0.emit(model::Bytecode::InvokeBuiltin(
+                        index as u16,
+                        arg_count as u8,
+                    ))
                 } else {
                     panic!("Undefined symbol: {symbol:?}")
                 }

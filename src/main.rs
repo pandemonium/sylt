@@ -46,7 +46,7 @@ fn main() -> Result<(), Error> {
     {
         print_line("What is your name?");
         let name = read_line();
-        print_line(name);
+        print_line("Hello: ", name);
     }
     "#;
 

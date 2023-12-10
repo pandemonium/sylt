@@ -1,5 +1,5 @@
-use std::{fmt, rc};
 use crate::ast;
+use std::{fmt, rc};
 
 #[derive(Clone, Debug, Default)]
 pub enum Value {
@@ -128,7 +128,6 @@ impl From<ast::Constant> for Value {
 #[derive(Clone, Copy, Debug)]
 pub struct Label(pub u16);
 
-
 // Am I going to be working with registers or a stack?
 #[derive(Debug, Clone)]
 pub enum Bytecode {
@@ -140,7 +139,7 @@ pub enum Bytecode {
 
     Arithmetic(AluOp),
 
-    InvokeBuiltin(u16),
+    InvokeBuiltin(u16, u8),
     Invoke(u16),
     Return,
     Dup,
@@ -179,7 +178,7 @@ impl fmt::Display for Bytecode {
             Bytecode::Arithmetic(AluOp::And) => write!(f, "and"),
             Bytecode::Arithmetic(AluOp::Or) => write!(f, "or"),
             Bytecode::Invoke(x) => write!(f, "invoke\t\t{x}"),
-            Bytecode::InvokeBuiltin(x) => write!(f, "invoke_builtin\t{x}"),
+            Bytecode::InvokeBuiltin(x, y) => write!(f, "invoke_builtin\t{x}, {y}"),
             Bytecode::Return => write!(f, "ret"),
             Bytecode::Dup => write!(f, "dup"),
             Bytecode::Discard => write!(f, "discard"),
@@ -242,19 +241,29 @@ impl fmt::Display for Function {
 #[derive(Debug)]
 pub struct BuiltinFunction {
     pub name: ast::Name,
-    pub prototype: Vec<ast::Type>,
+    pub prototype: BuiltinFunctionPrototype,
     pub stub: rc::Rc<dyn BuiltinStub>,
+}
+
+#[derive(Debug)]
+pub enum BuiltinFunctionPrototype {
+    Varargs,
+    Literally(Vec<ast::Type>),
 }
 
 impl fmt::Display for BuiltinFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let parameter_list = self
-            .prototype
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        write!(f, "{}({parameter_list})", self.name)
+        match &self.prototype {
+            BuiltinFunctionPrototype::Varargs => write!(f, "{}(...)", self.name),
+            BuiltinFunctionPrototype::Literally(prototype) => {
+                let parameter_list = prototype
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                write!(f, "{}({parameter_list})", self.name)
+            }
+        }
     }
 }
 

@@ -1,16 +1,16 @@
 use super::{compiler, model};
 use crate::ast;
-use std::{rc, io};
+use std::{io, rc};
 
 pub fn provide_standard_library(compiler: &mut compiler::Compile) {
     compiler.register_builtin(model::BuiltinFunction {
         name: ast::Name::simple("print_line"),
-        prototype: vec![ast::Type::named(&ast::Name::intrinsic("Text"))],
+        prototype: model::BuiltinFunctionPrototype::Varargs,
         stub: rc::Rc::new(PrintLine),
     });
     compiler.register_builtin(model::BuiltinFunction {
         name: ast::Name::simple("read_line"),
-        prototype: vec![],
+        prototype: model::BuiltinFunctionPrototype::Literally(vec![]),
         stub: rc::Rc::new(ReadLine),
     });
 }
@@ -29,8 +29,9 @@ impl model::BuiltinStub for PrintLine {
                 model::Value::Text(x) => format!("{x}"),
                 model::Value::Unit => format!("("),
             };
-            println!("{image}");
+            print!("{image}");
         }
+        println!();
         Some(model::Value::Unit)
     }
 }
@@ -39,9 +40,9 @@ impl model::BuiltinStub for PrintLine {
 pub struct ReadLine;
 
 impl model::BuiltinStub for ReadLine {
-    fn call(&self, parameters: &[model::Value]) -> Option<model::Value> {
+    fn call(&self, _parameters: &[model::Value]) -> Option<model::Value> {
         let mut buffer = String::new();
         io::stdin().read_line(&mut buffer).unwrap();
-        Some(model::Value::Text(buffer.into()))
+        Some(model::Value::Text(buffer[..(buffer.len() - 1)].into()))
     }
 }

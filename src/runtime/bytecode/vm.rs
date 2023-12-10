@@ -83,10 +83,10 @@ impl Interpreter {
                 let return_value = self.run_automat(executable, target);
                 self.stack.push(return_value)
             }
-            model::Bytecode::InvokeBuiltin(index) => {
+            model::Bytecode::InvokeBuiltin(index, arg_count) => {
                 let target = executable.resolve_builtin_target(*index);
-                let mut arguments = Vec::with_capacity(target.prototype.len());
-                for _ in &target.prototype {
+                let mut arguments = Vec::with_capacity(*arg_count as usize);
+                for _ in 0..*arg_count {
                     // Check and compare types here.
                     // insert(0, ...) because the functions expect the parameters
                     // in their natural order; popping them off a stack reverses that
