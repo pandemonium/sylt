@@ -1,3 +1,2 @@
-pub mod interpreter;
-pub mod intrinsics;
-pub mod vm;
+pub mod ast;
+pub mod bytecode;

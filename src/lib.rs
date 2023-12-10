@@ -1,4 +1,4 @@
-use runtime::interpreter;
+use runtime::ast::interpreter;
 
 pub mod ast;
 pub mod runtime;
@@ -10,7 +10,7 @@ pub mod syntax;
 #[derive(Debug)]
 pub enum Error {
     CompileTime(syntax::types::Error),
-    Runtime(runtime::interpreter::Error),
+    Runtime(runtime::ast::interpreter::Error),
 }
 
 impl From<syntax::types::Error> for Error {

@@ -21,9 +21,9 @@ pub mod types {
 
     #[derive(Debug)]
     pub struct ParseInfo {
-        location: kombi::Position,
-        last_token: Vec<lexer::types::Token>,
-        remains: Vec<lexer::types::Token>,
+        pub location: kombi::Position,
+        pub last_token: Vec<lexer::types::Token>,
+        pub remains: Vec<lexer::types::Token>,
     }
 
     impl From<lexer::types::Error> for Error {

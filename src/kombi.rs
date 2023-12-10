@@ -667,9 +667,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        char, enclosed_within, one_of, string, such_that, take, ParseState, Parser, Positioned,
-    };
+    use super::{char, enclosed_within, one_of, string, such_that, take, ParseState, Parser};
     use std::vec;
 
     #[test]
@@ -797,7 +795,7 @@ mod tests {
         "#
         .chars()
         .collect::<Vec<_>>();
-        let was = such_that(|c| true)
+        let was = such_that(|_| true)
             .zero_or_more()
             .parse(ParseState::new(&input));
 

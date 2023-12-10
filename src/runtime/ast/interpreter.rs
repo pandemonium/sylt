@@ -259,7 +259,7 @@ mod tests {
     use super::{ActivationFrame, Interpreter};
     use crate::{
         ast::{self, Constant, Program},
-        runtime::intrinsics,
+        runtime::ast::intrinsics,
         syntax, Error,
     };
 
@@ -322,7 +322,7 @@ mod tests {
         );
     }
 
-    //    #[test]
+    #[test]
     fn fibonacci() {
         let source = r#"
         fn fibonacci(n: Int) -> Int {
@@ -338,7 +338,7 @@ mod tests {
         }
 
         {
-            return fibonacci(30);
+            return fibonacci(20);
         }
         "#;
         let result = run_program(source).unwrap();

@@ -1,4 +1,4 @@
-use crate::runtime::intrinsics;
+use crate::runtime::ast::intrinsics;
 use core::fmt;
 use std::rc;
 
@@ -209,7 +209,7 @@ impl Name {
 impl fmt::Display for Name {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Name { module, name } = self;
-        write!(f, "{module}::{name}", )
+        write!(f, "{module}::{name}",)
     }
 }
 
@@ -406,7 +406,7 @@ impl Operator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{
+    use crate::runtime::ast::{
         interpreter,
         intrinsics::{artithmetic::operator, io},
     };

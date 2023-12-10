@@ -1,4 +1,4 @@
-use crate::{ast, runtime::interpreter};
+use crate::{ast, runtime::ast::interpreter};
 use core::fmt;
 use std::collections;
 
@@ -36,7 +36,7 @@ pub mod artithmetic {
                 Constant::{self, *},
                 Operator::{self, *},
             },
-            runtime::interpreter,
+            runtime::ast::interpreter,
         };
 
         pub fn apply(lhs: &Constant, op: &Operator, rhs: &Constant) -> Option<Constant> {
@@ -110,7 +110,7 @@ pub mod artithmetic {
 }
 
 mod text {
-    use crate::{ast, runtime::interpreter};
+    use crate::{ast, runtime::ast::interpreter};
 
     pub fn _apply_by_name(
         _symbol: &str,
@@ -126,7 +126,7 @@ mod text {
 
 pub mod io {
     use super::IntrinsicProxy;
-    use crate::{ast, runtime::interpreter};
+    use crate::{ast, runtime::ast::interpreter};
 
     #[derive(Debug)]
     pub struct PrintLineStub;

@@ -1,5 +1,9 @@
 use sylt::{
-    runtime::{interpreter::Interpreter, intrinsics, vm},
+    runtime::{
+        ast::interpreter::Interpreter,
+        ast::intrinsics,
+        bytecode::{self, vm},
+    },
     syntax, Error,
 };
 
@@ -34,22 +38,24 @@ fn main() -> Result<(), Error> {
         }
     
         {
-            return quux(10);
+            return quux(20000000);
         }
         "#;
 
     let source = r#"
-        {
-            print_line("Hello, world");
-        }
-        "#;
+    {
+        print_line("What is your name?");
+        let name = read_line();
+        print_line(name);
+    }
+    "#;
 
     let program = syntax::analyze(&source.chars().collect::<Vec<_>>())?;
-    let executable = vm::compile(program);
-    //    let return_value = vm::Interpreter::new().run(executable);
-    //    println!("Returns: {return_value}");
+    let executable = bytecode::compiler::make_executable(program);
+    let return_value = vm::Interpreter::new().run(executable);
+    println!("Returns: {return_value}");
 
-    println!("{executable}");
+    // println!("{executable}");
 
     //    let interpreter = Interpreter::new(program, intrinsics::initialize());
     //    let return_value = interpreter.run()?;
