@@ -146,7 +146,7 @@ fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     let level_3 = infix_level(level_3, level_2);
     let level_4 = infix_level(level_4, level_3);
     let level_5 = infix_level(level_5, level_4);
-    //    let level_6 = infix_level(level_6, level_5);
+    //    let _level_6 = infix_level(level_6, level_5);
 
     level_5
 }
@@ -277,10 +277,12 @@ fn function_declaration() -> impl Parser<In = lex::Token, Out = ast::Declaration
         .skip_right(separator(lex::Separator::Colon))
         .and_also(identifier())
         .map(|(name, type_)| {
-            ast::Parameter::new(
-                ast::Name::simple(&name),
-                ast::Type::named(&ast::Name::intrinsic(&type_)),
-            )
+            ast::Parameter {
+                name: ast::Name::simple(&name),
+                // This is not quite right because this forces everything
+                // to be intrinsic - what about user types?
+                type_: ast::Select::Type(ast::TypeSelector::Named(ast::Name::intrinsic(&type_))),
+            }
         });
 
     let formal_parameters = enclosed_within(
@@ -293,7 +295,10 @@ fn function_declaration() -> impl Parser<In = lex::Token, Out = ast::Declaration
         .skip_left(identifier().map(|x| ast::Name::simple(&x)))
         .and_also(formal_parameters)
         .skip_right(separator(lex::Separator::ThinRightArrow))
-        .and_also(identifier().map(|x| ast::Type::named(&ast::Name::intrinsic(&x))))
+        .and_also(
+            identifier()
+                .map(|x| ast::Select::Type(ast::TypeSelector::Named(ast::Name::intrinsic(&x)))),
+        )
         .and_also(block())
         .map(
             |(((name, parameters), return_type), body)| ast::FunctionDeclarator {
@@ -700,14 +705,14 @@ mod tests {
                 parameters: vec![
                     Parameter {
                         name: ast::Name::simple("name"),
-                        type_: Type::named(&Name::intrinsic("Int"))
+                        type_: Select::primitive_type(PrimitiveType::Int),
                     },
                     Parameter {
                         name: ast::Name::simple("x"),
-                        type_: Type::named(&Name::intrinsic("Boolean"))
+                        type_: Select::primitive_type(PrimitiveType::Boolean),
                     },
                 ],
-                return_type: Type::named(&Name::intrinsic("Text")),
+                return_type: Select::primitive_type(PrimitiveType::Text),
                 body: Block {
                     statements: vec![Statement::While {
                         predicate: Expression::Literal(Constant::Boolean(true)),

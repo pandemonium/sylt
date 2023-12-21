@@ -11,7 +11,7 @@ pub enum Error {
         was: ast::Name,
         at: ast::Expression,
     },
-    ExpectedReturn(ast::Type),
+    ExpectedReturn(ast::Select),
 }
 
 enum Environment {
@@ -79,19 +79,21 @@ impl<'a> ActivationFrame<'a> {
     }
 
     fn types_unify(lhs: &ast::Type, rhs: &ast::Type) -> bool {
-        lhs.subsumes(rhs)
+        let res = lhs.subsumes(rhs);
+
+        if !res {
+            println!("{lhs} and {rhs} do not unify");
+        }
+
+        res
     }
 
-    fn verify_return_value(&self, of_type: &ast::Type) -> Result<ast::Constant, Error> {
-        if of_type != &ast::Type::Unit {
-            self.return_value
-                .as_ref()
-                .filter(|value| Self::types_unify(of_type, &value.get_type()))
-                .ok_or_else(|| Error::ExpectedReturn(of_type.clone()))
-                .cloned()
-        } else {
-            Ok(ast::Constant::Void)
-        }
+    fn typecheck_return(&self, of_type: &ast::Select) -> Result<ast::Constant, Error> {
+        self.return_value
+            .as_ref()
+            .filter(|value| of_type.subsumes(&value.get_type()))
+            .ok_or_else(|| Error::ExpectedReturn(of_type.clone()))
+            .cloned()
     }
 
     fn apply_intrinsic(
@@ -133,14 +135,14 @@ impl<'a> ActivationFrame<'a> {
                     frame.put_local_variable(&name, value);
                 } else {
                     Err(Error::ExpectedType {
-                        expected: parameter.get_type().name(),
+                        expected: parameter.get_type().name().clone(),
                         was: value.get_type().name(),
                         at: apply.clone(),
                     })?;
                 }
             }
             frame.interpret_block(&function.body)?;
-            frame.verify_return_value(&function.return_type)
+            frame.typecheck_return(&function.return_type)
         } else {
             Err(Error::ExpectedArguments(
                 symbol.clone(),
@@ -250,7 +252,7 @@ impl Interpreter {
     pub fn run(&self) -> Result<ast::Constant, Error> {
         let mut frame = ActivationFrame::new(self);
         frame.interpret_block(&self.program.entry_point)?;
-        frame.verify_return_value(&ast::Constant::Int(0).get_type())
+        frame.typecheck_return(&ast::Select::primitive_type(ast::PrimitiveType::Int))
     }
 }
 

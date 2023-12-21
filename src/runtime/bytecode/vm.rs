@@ -3,18 +3,22 @@ use core::fmt;
 
 static mut INTERPRETED_BYTECODE_COUNT: usize = 0;
 
-pub struct Interpreter {
+pub fn interpret(executable: Executable) -> model::Value {
+    Interpreter::default().run(executable)
+}
+
+struct Interpreter {
     stack: Vec<model::Value>,
 }
 
-impl Interpreter {
-    pub fn new() -> Self {
-        Self {
-            stack: Vec::with_capacity(64),
-        }
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self { stack: Vec::with_capacity(64) }
     }
+}
 
-    pub fn run(mut self, executable: Executable) -> model::Value {
+impl Interpreter {
+    fn run(mut self, executable: Executable) -> model::Value {
         let return_value = self.run_automat(&executable, executable.entry_point());
 
         let count = unsafe { INTERPRETED_BYTECODE_COUNT };
@@ -97,7 +101,7 @@ impl Interpreter {
             }
             model::Bytecode::Return => {
                 let return_value = self.stack.pop().expect("no value to return on the stack");
-                frame.make_return(return_value)
+                frame.disband_and_return(return_value)
             }
             model::Bytecode::Dup => self.duplicate_top_of_stack(),
             model::Bytecode::Discard => {
@@ -227,7 +231,7 @@ impl ActivationFrame {
         }
     }
 
-    fn make_return(&mut self, val: model::Value) {
+    fn disband_and_return(&mut self, val: model::Value) {
         self.continuation = Continuation::Return(val)
     }
 

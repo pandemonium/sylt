@@ -22,37 +22,36 @@ fn main() -> Result<(), Error> {
     }
 
     {
-        return fibonacci(37);
+        return fibonacci(35);
     }
     "#;
 
-    let source = r#"
-        fn quux(n: Int) -> Int {
-            let sum = 0;
-            while n > 0 {
-                let sum = sum + n;
-                let n = n - 1;
-            }
-            
-            return sum;
-        }
-    
-        {
-            return quux(20000000);
-        }
-        "#;
+//    let source = r#"
+//        fn quux(n: Int) -> Int {
+//            let sum = 0;
+//            while n > 0 {
+//                let sum = sum + n;
+//                let n = n - 1;
+//            }
+//            
+//            return sum;
+//        }
+//    
+//        {
+//            return quux(20000000);
+//        }
+//        "#;
 
-    let source = r#"
-    {
-        print_line("What is your name?");
-        let name = read_line();
-        print_line("Hello: ", name);
-    }
-    "#;
+//    let source = r#"
+//    {
+//        print_line("What is your name?");
+//        print_line(format("Hello: ", read_line()));
+//    }
+//    "#;
 
     let program = syntax::analyze(&source.chars().collect::<Vec<_>>())?;
-    let executable = bytecode::compiler::make_executable(program);
-    let return_value = vm::Interpreter::new().run(executable);
+    let executable = bytecode::compiler::make(program);
+    let return_value = vm::interpret(executable);
     println!("Returns: {return_value}");
 
     // println!("{executable}");

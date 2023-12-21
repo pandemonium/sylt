@@ -89,6 +89,26 @@ impl From<AluOp> for ast::Operator {
     }
 }
 
+impl From<ast::Operator> for AluOp {
+    fn from(value: ast::Operator) -> Self {
+        match value {
+            ast::Operator::Plus => AluOp::Add,
+            ast::Operator::Minus => AluOp::Subtract,
+            ast::Operator::Times => AluOp::Multiply,
+            ast::Operator::Divides => AluOp::Divide,
+            ast::Operator::Modulo => AluOp::Modulo,
+            ast::Operator::LT => AluOp::Lt,
+            ast::Operator::LTE => AluOp::Lte,
+            ast::Operator::GT => AluOp::Gt,
+            ast::Operator::GTE => AluOp::Gte,
+            ast::Operator::Equals => AluOp::Equals,
+            ast::Operator::NotEqual => AluOp::NotEqual,
+            ast::Operator::And => AluOp::And,
+            ast::Operator::Or => AluOp::Or,
+        }
+    }
+}
+
 impl From<Value> for ast::Constant {
     fn from(value: Value) -> Self {
         match value {
@@ -128,7 +148,6 @@ impl From<ast::Constant> for Value {
 #[derive(Clone, Copy, Debug)]
 pub struct Label(pub u16);
 
-// Am I going to be working with registers or a stack?
 #[derive(Debug, Clone)]
 pub enum Bytecode {
     // Is there a string table too or just one for constants?

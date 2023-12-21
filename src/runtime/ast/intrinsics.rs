@@ -126,7 +126,10 @@ mod text {
 
 pub mod io {
     use super::IntrinsicProxy;
-    use crate::{ast, runtime::ast::interpreter};
+    use crate::{
+        ast::{self, Name, TypeSelector},
+        runtime::ast::interpreter,
+    };
 
     #[derive(Debug)]
     pub struct PrintLineStub;
@@ -142,10 +145,10 @@ pub mod io {
                 }
                 _otherwise => Err(interpreter::Error::ExpectedArguments(
                     ast::Name::simple("print_line"),
-                    vec![ast::Parameter::new(
-                        ast::Name::simple("line"),
-                        ast::Type::named(&ast::Name::simple("Text")),
-                    )],
+                    vec![ast::Parameter {
+                        name: ast::Name::simple("line"),
+                        type_: ast::Select::Type(ast::TypeSelector::Named(Name::intrinsic("Text"))),
+                    }],
                 )),
             }
         }
@@ -156,11 +159,14 @@ pub mod io {
         // "fn print_line(line: <What here>) -> unit" => ast::InstrinsicFunctionDef
         let functions = vec![ast::IntrinsicFunctionDeclarator::new(
             &ast::Name::intrinsic("print_line"),
-            &[ast::Parameter::new(
-                ast::Name::simple("line"),
-                ast::Type::named(&ast::Name::simple("Text")),
-            )],
-            ast::Type::Unit,
+            &[ast::Parameter {
+                name: ast::Name::simple("line"),
+                type_: ast::Select::Type(ast::TypeSelector::Named(Name::intrinsic("Text"))),
+            }],
+            // Quite the mouthful - what am I doing here?!
+            ast::Select::Type(TypeSelector::Named(ast::Name::intrinsic(
+                &ast::PrimitiveType::Unit.to_string(),
+            ))),
             PrintLineStub,
         )];
 

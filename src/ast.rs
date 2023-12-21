@@ -52,7 +52,7 @@ impl Declaration {
 pub struct IntrinsicFunctionDeclarator {
     pub name: Name,
     pub parameters: Vec<Parameter>,
-    pub return_type: Type,
+    pub return_type: Select,
 
     // This precludes PartialEq - it has to go somewhere else
     pub dispatch: rc::Rc<dyn intrinsics::IntrinsicProxy>,
@@ -68,7 +68,7 @@ impl PartialEq for IntrinsicFunctionDeclarator {
 }
 
 impl IntrinsicFunctionDeclarator {
-    pub fn new<F>(name: &Name, parameters: &[Parameter], return_type: Type, target: F) -> Self
+    pub fn new<F>(name: &Name, parameters: &[Parameter], return_type: Select, target: F) -> Self
     where
         F: intrinsics::IntrinsicProxy + 'static,
     {
@@ -89,7 +89,7 @@ impl IntrinsicFunctionDeclarator {
 pub struct FunctionDeclarator {
     pub name: Name,
     pub parameters: Vec<Parameter>,
-    pub return_type: Type,
+    pub return_type: Select,
     pub body: Block,
 }
 
@@ -102,15 +102,11 @@ impl FunctionDeclarator {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
     pub name: Name,
-    pub type_: Type,
+    pub type_: Select,
 }
 
 impl Parameter {
-    pub fn new(name: Name, type_: Type) -> Self {
-        Self { name, type_ }
-    }
-
-    pub fn get_type(&self) -> &Type {
+    pub fn get_type(&self) -> &Select {
         &self.type_
     }
 
@@ -215,16 +211,29 @@ impl fmt::Display for Name {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Select {
-    Type(Name),
+    Type(TypeSelector),
     Value(Name),
+}
+
+const NUMBER_STEREOTYPE_NAME: &str = "<<number>>";
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TypeSelector {
+    Named(Name),
+    Stereotype(Name),
 }
 
 impl Select {
     pub fn name(&self) -> &Name {
         match self {
-            Self::Type(name) => name,
+            Self::Type(TypeSelector::Named(name)) => name,
+            Self::Type(TypeSelector::Stereotype(name)) => name,
             Self::Value(name) => name,
         }
+    }
+
+    pub fn primitive_type(tpe: PrimitiveType) -> Select {
+        Select::Type(TypeSelector::Named(tpe.name()))
     }
 
     pub fn as_value(&self) -> Option<&Name> {
@@ -235,20 +244,28 @@ impl Select {
         }
     }
 
-    pub fn as_type(&self) -> Option<&Name> {
-        if let Self::Type(name) = self {
-            Some(name)
+    // This function does not spark joy.
+    pub fn is_stereotype_for(&self, scrutinee: &Type) -> bool {
+        if let Self::Type(TypeSelector::Stereotype(stereotype)) = self {
+            matches!(
+                scrutinee,
+                Type::Primitive(PrimitiveType::Int | PrimitiveType::Float)
+                    if stereotype.name == NUMBER_STEREOTYPE_NAME
+            )
         } else {
-            None
+            false
         }
+    }
+
+    pub fn subsumes(&self, scrutinee: &Type) -> bool {
+        self.name() == &scrutinee.name() || self.is_stereotype_for(scrutinee)
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     Named(Name),
-    Number,
-    Unit,
+    Primitive(PrimitiveType),
 }
 
 impl Type {
@@ -259,16 +276,12 @@ impl Type {
     pub fn name(&self) -> Name {
         match self {
             Self::Named(name) => name.clone(),
-            Self::Number => Name::intrinsic("{number}"),
-            Self::Unit => Name::intrinsic("Unit"),
+            Self::Primitive(tpe) => tpe.name(),
         }
     }
 
-    pub fn subsumes(&self, rhs: &Self) -> bool {
-        // Magic numbers a-plenty
-        self == rhs
-            || self == &Self::Number && rhs == &Self::Named(Name::intrinsic("Int"))
-            || self == &Self::Number && rhs == &Self::Named(Name::intrinsic("Float"))
+    pub fn subsumes(&self, rhs: &Type) -> bool {
+        *self == *rhs
     }
 }
 
@@ -276,9 +289,35 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Type::Named(name) => write!(f, "{name}"),
-            Type::Number => write!(f, "<<number>>"),
-            Type::Unit => write!(f, "<<unit>>"),
+            Self::Primitive(tpe) => write!(f, "{tpe}"),
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PrimitiveType {
+    Boolean,
+    Int,
+    Float,
+    Text,
+    Unit,
+}
+
+impl PrimitiveType {
+    pub fn name(&self) -> Name {
+        match self {
+            Self::Boolean => Name::intrinsic("Boolean"),
+            Self::Int => Name::intrinsic("Int"),
+            Self::Float => Name::intrinsic("Float"),
+            Self::Text => Name::intrinsic("Text"),
+            Self::Unit => Name::intrinsic("Unit"),
+        }
+    }
+}
+
+impl fmt::Display for PrimitiveType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name())
     }
 }
 
@@ -302,11 +341,11 @@ impl Constant {
 
     pub fn get_type(&self) -> Type {
         match self {
-            Constant::Boolean(..) => Type::named(&Name::intrinsic("Boolean")),
-            Constant::Int(..) => Type::named(&Name::intrinsic("Int")),
-            Constant::Float(..) => Type::named(&Name::intrinsic("Float")),
-            Constant::Text(..) => Type::named(&Name::intrinsic("Text")),
-            Constant::Void => Type::named(&Name::intrinsic("Unit")),
+            Constant::Boolean(..) => Type::Primitive(PrimitiveType::Boolean),
+            Constant::Int(..) => Type::Primitive(PrimitiveType::Int),
+            Constant::Float(..) => Type::Primitive(PrimitiveType::Float),
+            Constant::Text(..) => Type::Primitive(PrimitiveType::Text),
+            Constant::Void => Type::Primitive(PrimitiveType::Unit),
         }
     }
 }
@@ -372,13 +411,41 @@ impl Operator {
 
     pub fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new(Name::simple("lhs"), Type::Number),
-            Parameter::new(Name::simple("rhs"), Type::Number),
+            Parameter {
+                name: Name::simple("lhs"),
+                type_: Select::Type(TypeSelector::Stereotype(Name::intrinsic(
+                    NUMBER_STEREOTYPE_NAME,
+                ))),
+            },
+            Parameter {
+                name: Name::simple("rhs"),
+                type_: Select::Type(TypeSelector::Stereotype(Name::intrinsic(
+                    NUMBER_STEREOTYPE_NAME,
+                ))),
+            },
         ]
     }
 
-    pub fn return_type(&self) -> Type {
-        Type::Number
+    pub fn return_type(&self) -> Select {
+        let numeric = Select::Type(TypeSelector::Stereotype(Name::intrinsic(
+            NUMBER_STEREOTYPE_NAME,
+        )));
+        let boolean = Select::Type(TypeSelector::Named(PrimitiveType::Boolean.name()));
+        match self {
+            Operator::Plus => numeric,
+            Operator::Minus => numeric,
+            Operator::Times => numeric,
+            Operator::Divides => numeric,
+            Operator::Modulo => numeric,
+            Operator::LT => boolean,
+            Operator::LTE => boolean,
+            Operator::GT => boolean,
+            Operator::GTE => boolean,
+            Operator::Equals => boolean,
+            Operator::NotEqual => boolean,
+            Operator::And => boolean,
+            Operator::Or => boolean,
+        }
     }
 
     pub fn resolve(name: &str) -> Option<Operator> {
@@ -396,7 +463,6 @@ impl Operator {
             Self::NotEqual,
             Self::And,
             Self::Or,
-            // boolean algebra
         ]
         .into_iter()
         .find(|op| op.local_name() == name)
@@ -417,7 +483,7 @@ mod tests {
             declarations: vec![Declaration::Function(FunctionDeclarator {
                 name: Name::simple("print_hello_world"),
                 parameters: vec![],
-                return_type: Type::Unit,
+                return_type: Select::Type(TypeSelector::Stereotype(PrimitiveType::Unit.name())),
                 body: Block {
                     statements: vec![
                         Statement::Expression(Expression::Apply {
