@@ -1,5 +1,5 @@
-use crate::ast;
-use std::{fmt, rc};
+use crate::ast::{self, PrimitiveType};
+use std::{cell, fmt, rc};
 
 #[derive(Clone, Debug, Default)]
 pub enum Value {
@@ -9,6 +9,48 @@ pub enum Value {
     Text(Box<str>),
     #[default]
     Unit,
+    Array(cell::RefCell<ValueArray>),
+    //    Reference(ast::Type, usize),
+}
+
+#[derive(Clone, Debug)]
+pub enum ValueArray {
+    Int(Vec<i64>),
+    Float(Vec<f64>),
+    Boolean(Vec<bool>),
+    Text(Vec<Box<str>>),
+}
+
+impl fmt::Display for ValueArray {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValueArray::Int(xs) => write!(f, "int array [of {} elements]", xs.len()),
+            ValueArray::Float(xs) => write!(f, "int array [of {} elements]", xs.len()),
+            ValueArray::Boolean(xs) => write!(f, "int array [of {} elements]", xs.len()),
+            ValueArray::Text(xs) => write!(f, "int array [of {} elements]", xs.len()),
+        }
+    }
+}
+
+impl ValueArray {
+    pub fn unsafe_put_element(&mut self, index: usize, new: Value) {
+        match (self, new) {
+            (ValueArray::Int(array), Value::Int(element)) => array[index] = element,
+            (ValueArray::Float(array), Value::Float(element)) => array[index] = element,
+            (ValueArray::Boolean(array), Value::Boolean(element)) => array[index] = element,
+            (ValueArray::Text(array), Value::Text(element)) => array[index] = element,
+            (array, element) => panic!("Must not put {element} in {array}"),
+        }
+    }
+
+    pub fn get_element(&self, index: usize) -> Option<Value> {
+        match self {
+            ValueArray::Int(array) => array.get(index).copied().map(Value::Int),
+            ValueArray::Float(array) => array.get(index).copied().map(Value::Float),
+            ValueArray::Boolean(array) => array.get(index).copied().map(Value::Boolean),
+            ValueArray::Text(array) => array.get(index).cloned().map(Value::Text),
+        }
+    }
 }
 
 // This goes in vm.rs. Or perhaps intrinsics.rs?
@@ -109,26 +151,15 @@ impl From<ast::Operator> for AluOp {
     }
 }
 
-impl From<Value> for ast::Constant {
-    fn from(value: Value) -> Self {
-        match value {
-            Value::Int(x) => Self::Int(x),
-            Value::Float(x) => Self::Float(x),
-            Value::Boolean(x) => Self::Boolean(x),
-            Value::Text(x) => Self::Text(x.into_string()),
-            Value::Unit => Self::Void,
-        }
-    }
-}
-
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Value::Int(x) => write!(f, "#{x}"),
-            Value::Float(x) => write!(f, "#{x}"),
-            Value::Boolean(x) => write!(f, "{}", if *x { "True" } else { "False" }),
-            Value::Text(x) => write!(f, "'{x}'"),
-            Value::Unit => write!(f, "()"),
+            Self::Int(x) => write!(f, "#{x}"),
+            Self::Float(x) => write!(f, "#{x}"),
+            Self::Boolean(x) => write!(f, "{}", if *x { "True" } else { "False" }),
+            Self::Text(x) => write!(f, "'{x}'"),
+            Self::Unit => write!(f, "()"),
+            Self::Array(..) => write!(f, "<<array>>"),
         }
     }
 }
@@ -141,6 +172,18 @@ impl From<ast::Constant> for Value {
             ast::Constant::Float(x) => Value::Float(x),
             ast::Constant::Text(x) => Value::Text(x.into()),
             ast::Constant::Void => Value::Unit,
+            ast::Constant::Array(array) => Value::Array(cell::RefCell::new(array.into())),
+        }
+    }
+}
+
+impl From<ast::ArrayConstant> for ValueArray {
+    fn from(value: ast::ArrayConstant) -> Self {
+        match value {
+            ast::ArrayConstant::Int(array) => ValueArray::Int(array),
+            ast::ArrayConstant::Float(array) => ValueArray::Float(array),
+            ast::ArrayConstant::Boolean(array) => ValueArray::Boolean(array),
+            ast::ArrayConstant::Text(array) => ValueArray::Text(array),
         }
     }
 }
@@ -150,12 +193,12 @@ pub struct Label(pub u16);
 
 #[derive(Debug, Clone)]
 pub enum Bytecode {
-    // Is there a string table too or just one for constants?
-    LoadConstant(Value),
+    LoadConstant(Value), // Push constant onto stack
 
-    LoadLocal(u8),
-    StoreLocal(u8),
+    LoadLocal(u8),  // Push local onto stack
+    StoreLocal(u8), // Pop into local
 
+    Array(ArrayOp),
     Arithmetic(AluOp),
 
     InvokeBuiltin(u16, u8),
@@ -166,6 +209,13 @@ pub enum Bytecode {
 
     Jump(Label),
     ConditionalJump(Label, Label),
+}
+
+#[derive(Debug, Clone)]
+pub enum ArrayOp {
+    New(ast::PrimitiveType), // Allocate array; which type?
+    Load,                    // Push array element onto stack
+    Store,                   // Pop stack into array element
 }
 
 impl Bytecode {
@@ -183,6 +233,13 @@ impl fmt::Display for Bytecode {
             Bytecode::LoadConstant(x) => write!(f, "constant\t{x}"),
             Bytecode::LoadLocal(x) => write!(f, "load\t\t{x}"),
             Bytecode::StoreLocal(x) => write!(f, "store\t\t{x}"),
+            Bytecode::Array(ArrayOp::New(PrimitiveType::Int)) => write!(f, "int_array"),
+            Bytecode::Array(ArrayOp::New(PrimitiveType::Float)) => write!(f, "float_array"),
+            Bytecode::Array(ArrayOp::New(PrimitiveType::Boolean)) => write!(f, "boolean_array"),
+            Bytecode::Array(ArrayOp::New(PrimitiveType::Text)) => write!(f, "text_array"),
+            Bytecode::Array(ArrayOp::New(PrimitiveType::Unit)) => write!(f, "unit_array"),
+            Bytecode::Array(ArrayOp::Load) => write!(f, "array_load"),
+            Bytecode::Array(ArrayOp::Store) => write!(f, "array_store"),
             Bytecode::Arithmetic(AluOp::Add) => write!(f, "add"),
             Bytecode::Arithmetic(AluOp::Subtract) => write!(f, "sub"),
             Bytecode::Arithmetic(AluOp::Multiply) => write!(f, "mul"),

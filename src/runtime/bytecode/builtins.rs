@@ -69,6 +69,7 @@ impl model::BuiltinStub for Format {
                 model::Value::Boolean(x) => format!("{x}"),
                 model::Value::Text(x) => format!("{x}"),
                 model::Value::Unit => format!("()"),
+                model::Value::Array(array) => format!("{}", array.borrow())
             };
             buffer.push_str(&image);
         }

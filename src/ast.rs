@@ -328,6 +328,26 @@ pub enum Constant {
     Float(f64),
     Text(String),
     Void,
+    Array(ArrayConstant),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ArrayConstant {
+    Int(Vec<i64>),
+    Float(Vec<f64>),
+    Boolean(Vec<bool>),
+    Text(Vec<Box<str>>),
+}
+
+impl fmt::Display for ArrayConstant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ArrayConstant::Int(array) => write!(f, "Int array of {} elements", array.len()),
+            ArrayConstant::Float(array) => write!(f, "Int array of {} elements", array.len()),
+            ArrayConstant::Boolean(array) => write!(f, "Int array of {} elements", array.len()),
+            ArrayConstant::Text(array) => write!(f, "Int array of {} elements", array.len()),
+        }
+    }
 }
 
 impl Constant {
@@ -346,6 +366,7 @@ impl Constant {
             Constant::Float(..) => Type::Primitive(PrimitiveType::Float),
             Constant::Text(..) => Type::Primitive(PrimitiveType::Text),
             Constant::Void => Type::Primitive(PrimitiveType::Unit),
+            Constant::Array(array) => todo!(),
         }
     }
 }
@@ -358,6 +379,7 @@ impl fmt::Display for Constant {
             Constant::Float(x) => write!(f, "{x}"),
             Constant::Text(x) => write!(f, "{x}"),
             Constant::Void => write!(f, "()"),
+            Constant::Array(array) => write!(f, "Array of {}", array),
         }
     }
 }

@@ -1,23 +1,27 @@
 use super::model;
+use crate::ast;
 use core::fmt;
+use std::cell;
 
 static mut INTERPRETED_BYTECODE_COUNT: usize = 0;
 
 pub fn interpret(executable: Executable) -> model::Value {
-    Interpreter::default().run(executable)
+    VirtualMachine::default().run(executable)
 }
 
-struct Interpreter {
+struct VirtualMachine {
     stack: Vec<model::Value>,
 }
 
-impl Default for Interpreter {
+impl Default for VirtualMachine {
     fn default() -> Self {
-        Self { stack: Vec::with_capacity(64) }
+        Self {
+            stack: Vec::with_capacity(64),
+        }
     }
 }
 
-impl Interpreter {
+impl VirtualMachine {
     fn run(mut self, executable: Executable) -> model::Value {
         let return_value = self.run_automat(&executable, executable.entry_point());
 
@@ -74,6 +78,56 @@ impl Interpreter {
             model::Bytecode::LoadLocal(index) => self.stack.push(frame.get_local(*index).clone()),
             model::Bytecode::StoreLocal(index) => {
                 frame.put_local(*index, self.stack.pop().expect("expected 1 stack operands"))
+            }
+            model::Bytecode::Array(model::ArrayOp::New(tpe)) => {
+                if let Some(model::Value::Int(length)) = self.stack.pop() {
+                    let array_value = match tpe {
+                        ast::PrimitiveType::Boolean => {
+                            model::ValueArray::Boolean(vec![false; length as usize])
+                        }
+                        ast::PrimitiveType::Int => model::ValueArray::Int(vec![0; length as usize]),
+                        ast::PrimitiveType::Float => {
+                            model::ValueArray::Float(vec![0f64; length as usize])
+                        }
+                        ast::PrimitiveType::Text => {
+                            model::ValueArray::Text(vec!["".into(); length as usize])
+                        }
+                        ast::PrimitiveType::Unit => panic!("Undefined operation"),
+                    };
+                    self.stack
+                        .push(model::Value::Array(cell::RefCell::new(array_value)))
+                } else {
+                    panic!("Expected length of array")
+                }
+            }
+            model::Bytecode::Array(model::ArrayOp::Load) => {
+                if let Some(model::Value::Int(index)) = self.stack.pop() {
+                    if let Some(model::Value::Array(array)) = self.stack.pop() {
+                        if let Some(element) = array.borrow().get_element(index as usize) {
+                            self.stack.push(element)
+                        } else {
+                            panic!("Index out of bounds!")
+                        }
+                    } else {
+                        panic!("Expected an array on the stack")
+                    }
+                } else {
+                    panic!("Expected an array length")
+                }
+            }
+            model::Bytecode::Array(model::ArrayOp::Store) => {
+                let new_element = self.stack.pop().expect("A value to store in the array");
+                if let Some(model::Value::Int(index)) = self.stack.pop() {
+                    if let Some(model::Value::Array(array)) = self.stack.pop() {
+                        array
+                            .borrow_mut()
+                            .unsafe_put_element(index as usize, new_element);
+                    } else {
+                        panic!("Expected an array on the stack")
+                    }
+                } else {
+                    panic!("Expected an array length")
+                }
             }
             model::Bytecode::Arithmetic(op) => {
                 // make a thing that will pop a specific type.

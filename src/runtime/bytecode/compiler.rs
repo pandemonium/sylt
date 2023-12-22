@@ -14,7 +14,7 @@ pub struct Compile(Generator);
 
 impl Compile {
     fn link(self) -> vm::Executable {
-        self.0.into_executable()
+        self.0.build_executable()
     }
 
     pub fn register_builtin(&mut self, builtin: model::BuiltinFunction) {
@@ -216,7 +216,7 @@ struct Generator {
 }
 
 impl Generator {
-    fn into_executable(self) -> vm::Executable {
+    fn build_executable(self) -> vm::Executable {
         vm::Executable {
             functions: self
                 .functions
