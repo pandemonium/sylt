@@ -1,4 +1,4 @@
-use std::marker;
+use std::{cell, marker};
 
 use crate::{
     ast, expect,
@@ -61,7 +61,12 @@ pub fn parse_expression(input: &str) -> types::Result<ast::Expression> {
 struct Thunk<A>(marker::PhantomData<A>);
 
 fn literal() -> impl Parser<In = lex::Token, Out = ast::Expression> {
-    expect!(lex::Token::Literal(lit) => into_constant(lit)).map(ast::Expression::Literal)
+    // Is this perhaps left recursive?
+    constant().map(ast::Expression::Literal).or_else(array())
+}
+
+fn constant() -> impl Parser<In = lex::Token, Out = ast::Constant> {
+    expect!(lex::Token::Literal(lit) => into_constant(lit))
 }
 
 fn into_constant(lit: &lex::Literal) -> ast::Constant {
@@ -191,6 +196,21 @@ fn apply() -> impl Parser<In = lex::Token, Out = ast::Expression> {
 
 fn variable() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     identifier().map(|id| ast::Expression::Variable(ast::Select::Value(ast::Name::simple(&id))))
+}
+
+fn array() -> impl Parser<In = lex::Token, Out = ast::Expression> {
+    let size = expect!(lex::Token::Literal(lex::Literal::Integer(x)) => *x);
+    enclosed_within(
+        separator(lex::Separator::LeftBracket),
+        separator(lex::Separator::RightBracket),
+        constant()
+            .skip_right(separator(lex::Separator::Semicolon))
+            .and_also(size),
+    )
+    .map(|(template, size)| {
+        let array = ast::ArrayConstant::new(template, size as usize);
+        ast::Expression::Literal(ast::Constant::Array(cell::RefCell::new(array)))
+    })
 }
 
 fn statement() -> Thunk<ast::Statement> {

@@ -1,4 +1,7 @@
-use crate::{runtime::{ast::intrinsics, self}, Error};
+use crate::{
+    runtime::{self, ast::intrinsics},
+    Error,
+};
 use core::fmt;
 use std::{cell, rc};
 
@@ -314,6 +317,18 @@ pub enum PrimitiveType {
 }
 
 impl PrimitiveType {
+    pub fn try_from_name(name: &str) -> Option<PrimitiveType> {
+        match name {
+            "Boolean" => Some(Self::Boolean),
+            "Int" => Some(Self::Int),
+            "Float" => Some(Self::Float),
+            "Text" => Some(Self::Text),
+            "Unit" => Some(Self::Unit),
+            "Array" => Some(Self::Array),
+            _otherwise => None,
+        }
+    }
+
     pub fn name(&self) -> Name {
         match self {
             Self::Boolean => Name::intrinsic("Boolean"),
@@ -350,7 +365,12 @@ pub enum ArrayConstant {
     Text(Vec<String>),
 }
 
+use runtime::ast::interpreter::Error as RuntimeError;
 impl ArrayConstant {
+    pub fn new(template: Constant, size: usize) -> Self {
+        todo!()
+    }
+
     pub fn length(&self) -> usize {
         match self {
             ArrayConstant::Int(array) => array.len(),
@@ -371,25 +391,25 @@ impl ArrayConstant {
 
     // Bad ref to runtime::ast::interpreter::Error
     // This function is badly placed.
-    pub fn put_element(&mut self, index: usize, new_element: Constant) -> Result<(), runtime::ast::interpreter::Error> {
+    pub fn put_element(&mut self, index: usize, new_element: Constant) -> Result<(), RuntimeError> {
         match (self, new_element) {
-            (ArrayConstant::Int(array), Constant::Int(new_element)) => {
-                array.get_mut(index).map(|x| *x = new_element);
+            (ArrayConstant::Int(array), Constant::Int(mut new_element)) => {
+                array.get_mut(index).replace(&mut new_element);
                 Ok(())
             }
-            (ArrayConstant::Float(array), Constant::Float(new_element)) => {
-                array.get_mut(index).map(|x| *x = new_element);
+            (ArrayConstant::Float(array), Constant::Float(mut new_element)) => {
+                array.get_mut(index).replace(&mut new_element);
                 Ok(())
             }
-            (ArrayConstant::Boolean(array), Constant::Boolean(new_element)) => {
-                array.get_mut(index).map(|x| *x = new_element);
+            (ArrayConstant::Boolean(array), Constant::Boolean(mut new_element)) => {
+                array.get_mut(index).replace(&mut new_element);
                 Ok(())
             }
-            (ArrayConstant::Text(array), Constant::Text(new_element)) => {
-                array.get_mut(index).map(|x| *x = new_element);
+            (ArrayConstant::Text(array), Constant::Text(mut new_element)) => {
+                array.get_mut(index).replace(&mut new_element);
                 Ok(())
             }
-            (array, new_element) => todo!(),
+            (_array, _new_element) => todo!(),
         }
     }
 }

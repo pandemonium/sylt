@@ -42,7 +42,6 @@ pub mod types {
 
     pub struct Lexeme {
         _token: Token,
-        
     }
 
     #[derive(Clone, Debug, PartialEq)]
@@ -61,6 +60,8 @@ pub mod types {
         RightParen,
         LeftBrace,
         RightBrace,
+        LeftBracket,
+        RightBracket,
         LessThan,
         LessThanOrEqual,
         GreaterThan,
@@ -89,6 +90,8 @@ pub mod types {
                 Self::RightParen => ')',
                 Self::LeftBrace => '{',
                 Self::RightBrace => '}',
+                Self::LeftBracket => ']',
+                Self::RightBracket => '[',
                 Self::LessThan => '<',
                 Self::GreaterThan => '>',
                 Self::Colon => ':',
@@ -119,6 +122,8 @@ pub mod types {
                 ')' => Some(Self::RightParen),
                 '{' => Some(Self::LeftBrace),
                 '}' => Some(Self::RightBrace),
+                '[' => Some(Self::LeftBracket),
+                ']' => Some(Self::RightBracket),
                 '<' => Some(Self::LessThan),
                 '>' => Some(Self::GreaterThan),
                 ':' => Some(Self::Colon),
@@ -465,6 +470,26 @@ mod tests {
                 T::Separator(Separator::RightParen),
                 T::Separator(Separator::Semicolon),
                 T::Separator(Separator::RightBrace),
+            ]
+        );
+    }
+
+    #[test]
+    fn array_declaration() {
+        let input = r#" let xs =[42;  427 ] ;   "#;
+        let was = run(&input.chars().collect::<Vec<_>>());
+        assert_eq!(
+            was.unwrap(),
+            vec![
+                T::Keyword(Keyword::Let),
+                T::Identifier(Identifier("xs".into())),
+                T::Separator(Separator::Assign),
+                T::Separator(Separator::LeftBracket),
+                T::Literal(Literal::Integer(42)),
+                T::Separator(Separator::Semicolon),
+                T::Literal(Literal::Integer(427)),
+                T::Separator(Separator::RightBracket),
+                T::Separator(Separator::Semicolon),
             ]
         );
     }
