@@ -92,7 +92,7 @@ impl VirtualMachine {
                         ast::PrimitiveType::Text => {
                             model::ValueArray::Text(vec!["".into(); length as usize])
                         }
-                        ast::PrimitiveType::Unit => panic!("Undefined operation"),
+                        otherwise => panic!("New array of type {otherwise} is not supported"),
                     };
                     self.stack
                         .push(model::Value::Array(cell::RefCell::new(array_value)))

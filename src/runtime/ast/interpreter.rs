@@ -1,4 +1,4 @@
-use crate::ast;
+use crate::ast::{self, Expression};
 use std::collections;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -12,6 +12,12 @@ pub enum Error {
         at: ast::Expression,
     },
     ExpectedReturn(ast::Select),
+    IndexOutOfBounds {
+        array: Expression,
+        subscript: Expression,
+        index: usize,
+        length: usize,
+    },
 }
 
 enum Environment {
@@ -158,6 +164,9 @@ impl<'a> ActivationFrame<'a> {
                 .get_local_variable(symbol)
                 .cloned()
                 .ok_or_else(|| Error::UnresolvedSymbol(symbol.name().clone())),
+            ast::Expression::ArrayRead { array, subscript } => {
+                self.get_array_element(array, subscript)
+            }
             ast::Expression::ApplyInfix { lhs, symbol, rhs } => {
                 let lhs = self.reduce(&lhs)?;
                 let rhs = self.reduce(&rhs)?;
@@ -170,6 +179,62 @@ impl<'a> ActivationFrame<'a> {
             ast::Expression::Apply { symbol, arguments } => {
                 self.apply_function(e, symbol.as_value().expect("Select::Value"), &arguments)
             }
+        }
+    }
+
+    fn get_array_element(
+        &self,
+        array_expr: &ast::Expression,
+        subscript_expr: &ast::Expression,
+    ) -> Result<ast::Constant, Error> {
+        let array = self.reduce(&array_expr)?;
+        if let ast::Constant::Array(array) = array {
+            let index = self.reduce(&subscript_expr)?;
+            if let ast::Constant::Int(index) = index {
+                let index = index as usize;
+                array
+                    .borrow()
+                    .get_element(index)
+                    .ok_or_else(|| Error::IndexOutOfBounds {
+                        array: array_expr.clone(),
+                        subscript: subscript_expr.clone(),
+                        index: index,
+                        length: array.borrow().length(),
+                    })
+            } else {
+                Err(Error::ExpectedType {
+                    expected: ast::PrimitiveType::Int.name(),
+                    was: index.get_type().name(),
+                    at: subscript_expr.clone(),
+                })
+            }
+        } else {
+            Err(Error::ExpectedType {
+                expected: ast::PrimitiveType::Array.name(),
+                was: array.get_type().name(),
+                at: array_expr.clone(),
+            })
+        }
+    }
+
+    fn put_array_element(
+        &self,
+        array_expr: &ast::Expression,
+        subscript_expr: &ast::Expression,
+        updated_element_expr: &ast::Expression,
+    ) -> Result<(), Error> {
+        let array = self.reduce(&array_expr)?;
+        if let ast::Constant::Array(array) = array {
+            let index = self.reduce(&subscript_expr)?;
+            if let ast::Constant::Int(index) = index {
+                let rhs = self.reduce(updated_element_expr)?;
+                array.borrow_mut().put_element(index as usize, rhs)?;
+                Ok(())
+            } else {
+                todo!()
+            }
+        } else {
+            todo!()
         }
     }
 
@@ -204,6 +269,13 @@ impl<'a> ActivationFrame<'a> {
                     let return_value = self.reduce(return_value)?;
                     self.set_return_value(return_value);
                     break;
+                }
+                ast::Statement::ArrayUpdate {
+                    array,
+                    subscript,
+                    rhs,
+                } => {
+                    todo!()
                 }
             }
         }

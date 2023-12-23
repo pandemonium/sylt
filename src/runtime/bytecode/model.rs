@@ -172,7 +172,10 @@ impl From<ast::Constant> for Value {
             ast::Constant::Float(x) => Value::Float(x),
             ast::Constant::Text(x) => Value::Text(x.into()),
             ast::Constant::Void => Value::Unit,
-            ast::Constant::Array(array) => Value::Array(cell::RefCell::new(array.into())),
+            ast::Constant::Array(array) => {
+                // Is this the most efficient way to do this? Does it matter?
+                Value::Array(cell::RefCell::new(array.into_inner().into()))
+            }
         }
     }
 }
@@ -183,7 +186,9 @@ impl From<ast::ArrayConstant> for ValueArray {
             ast::ArrayConstant::Int(array) => ValueArray::Int(array),
             ast::ArrayConstant::Float(array) => ValueArray::Float(array),
             ast::ArrayConstant::Boolean(array) => ValueArray::Boolean(array),
-            ast::ArrayConstant::Text(array) => ValueArray::Text(array),
+            ast::ArrayConstant::Text(array) => {
+                ValueArray::Text(array.into_iter().map(Into::into).collect())
+            }
         }
     }
 }
@@ -238,6 +243,7 @@ impl fmt::Display for Bytecode {
             Bytecode::Array(ArrayOp::New(PrimitiveType::Boolean)) => write!(f, "boolean_array"),
             Bytecode::Array(ArrayOp::New(PrimitiveType::Text)) => write!(f, "text_array"),
             Bytecode::Array(ArrayOp::New(PrimitiveType::Unit)) => write!(f, "unit_array"),
+            Bytecode::Array(ArrayOp::New(PrimitiveType::Array)) => write!(f, "multi_array"),    // HMM. Do I support this?
             Bytecode::Array(ArrayOp::Load) => write!(f, "array_load"),
             Bytecode::Array(ArrayOp::Store) => write!(f, "array_store"),
             Bytecode::Arithmetic(AluOp::Add) => write!(f, "add"),

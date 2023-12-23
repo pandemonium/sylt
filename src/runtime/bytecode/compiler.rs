@@ -153,6 +153,9 @@ impl Compile {
                 self.expression(expression);
                 self.emit(model::Bytecode::Return)
             }
+            ast::Statement::ArrayUpdate { array, subscript, rhs } => {
+                todo!()
+            }
         }
     }
 
@@ -169,6 +172,9 @@ impl Compile {
                     .expect(&format!("Unresolved symbol {name:?}"))
                     as u8;
                 self.emit(model::Bytecode::LoadLocal(slot))
+            }
+            ast::Expression::ArrayRead { array, subscript } => {
+                todo!()
             }
             ast::Expression::ApplyInfix { lhs, symbol, rhs } => {
                 self.expression(*lhs);

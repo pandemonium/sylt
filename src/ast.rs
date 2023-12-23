@@ -1,6 +1,6 @@
-use crate::runtime::ast::intrinsics;
+use crate::{runtime::{ast::intrinsics, self}, Error};
 use core::fmt;
-use std::rc;
+use std::{cell, rc};
 
 #[derive(Clone, Debug)]
 pub struct Program {
@@ -135,6 +135,11 @@ pub enum Statement {
     },
     Expression(Expression),
     Return(Expression),
+    ArrayUpdate {
+        array: Box<Expression>,
+        subscript: Box<Expression>,
+        rhs: Box<Expression>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -146,6 +151,10 @@ pub struct Block {
 pub enum Expression {
     Literal(Constant),
     Variable(Select),
+    ArrayRead {
+        array: Box<Expression>,
+        subscript: Box<Expression>,
+    },
     ApplyInfix {
         lhs: Box<Expression>,
         symbol: Operator,
@@ -301,6 +310,7 @@ pub enum PrimitiveType {
     Float,
     Text,
     Unit,
+    Array,
 }
 
 impl PrimitiveType {
@@ -311,6 +321,7 @@ impl PrimitiveType {
             Self::Float => Name::intrinsic("Float"),
             Self::Text => Name::intrinsic("Text"),
             Self::Unit => Name::intrinsic("Unit"),
+            Self::Array => Name::intrinsic("Array"),
         }
     }
 }
@@ -328,7 +339,7 @@ pub enum Constant {
     Float(f64),
     Text(String),
     Void,
-    Array(ArrayConstant),
+    Array(cell::RefCell<ArrayConstant>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -336,7 +347,51 @@ pub enum ArrayConstant {
     Int(Vec<i64>),
     Float(Vec<f64>),
     Boolean(Vec<bool>),
-    Text(Vec<Box<str>>),
+    Text(Vec<String>),
+}
+
+impl ArrayConstant {
+    pub fn length(&self) -> usize {
+        match self {
+            ArrayConstant::Int(array) => array.len(),
+            ArrayConstant::Float(array) => array.len(),
+            ArrayConstant::Boolean(array) => array.len(),
+            ArrayConstant::Text(array) => array.len(),
+        }
+    }
+
+    pub fn get_element(&self, index: usize) -> Option<Constant> {
+        match self {
+            ArrayConstant::Int(array) => array.get(index).copied().map(Constant::Int),
+            ArrayConstant::Float(array) => array.get(index).copied().map(Constant::Float),
+            ArrayConstant::Boolean(array) => array.get(index).copied().map(Constant::Boolean),
+            ArrayConstant::Text(array) => array.get(index).cloned().map(Constant::Text),
+        }
+    }
+
+    // Bad ref to runtime::ast::interpreter::Error
+    // This function is badly placed.
+    pub fn put_element(&mut self, index: usize, new_element: Constant) -> Result<(), runtime::ast::interpreter::Error> {
+        match (self, new_element) {
+            (ArrayConstant::Int(array), Constant::Int(new_element)) => {
+                array.get_mut(index).map(|x| *x = new_element);
+                Ok(())
+            }
+            (ArrayConstant::Float(array), Constant::Float(new_element)) => {
+                array.get_mut(index).map(|x| *x = new_element);
+                Ok(())
+            }
+            (ArrayConstant::Boolean(array), Constant::Boolean(new_element)) => {
+                array.get_mut(index).map(|x| *x = new_element);
+                Ok(())
+            }
+            (ArrayConstant::Text(array), Constant::Text(new_element)) => {
+                array.get_mut(index).map(|x| *x = new_element);
+                Ok(())
+            }
+            (array, new_element) => todo!(),
+        }
+    }
 }
 
 impl fmt::Display for ArrayConstant {
@@ -366,7 +421,7 @@ impl Constant {
             Constant::Float(..) => Type::Primitive(PrimitiveType::Float),
             Constant::Text(..) => Type::Primitive(PrimitiveType::Text),
             Constant::Void => Type::Primitive(PrimitiveType::Unit),
-            Constant::Array(array) => todo!(),
+            Constant::Array(..) => Type::Primitive(PrimitiveType::Array),
         }
     }
 }
@@ -379,7 +434,7 @@ impl fmt::Display for Constant {
             Constant::Float(x) => write!(f, "{x}"),
             Constant::Text(x) => write!(f, "{x}"),
             Constant::Void => write!(f, "()"),
-            Constant::Array(array) => write!(f, "Array of {}", array),
+            Constant::Array(array) => write!(f, "Array of {}", array.borrow()),
         }
     }
 }
