@@ -1,7 +1,4 @@
-use crate::{
-    runtime::{self, ast::intrinsics},
-    Error,
-};
+use crate::runtime::{self, ast::intrinsics};
 use core::fmt;
 use std::{cell, rc};
 
@@ -368,7 +365,13 @@ pub enum ArrayConstant {
 use runtime::ast::interpreter::Error as RuntimeError;
 impl ArrayConstant {
     pub fn new(template: Constant, size: usize) -> Self {
-        todo!()
+        match template {
+            Constant::Boolean(template) => Self::Boolean(vec![template; size]),
+            Constant::Int(template) => Self::Int(vec![template; size]),
+            Constant::Float(template) => Self::Float(vec![template; size]),
+            Constant::Text(template) => Self::Text(vec![template; size]),
+            _otherwise => todo!(),
+        }
     }
 
     pub fn length(&self) -> usize {

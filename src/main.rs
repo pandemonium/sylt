@@ -26,39 +26,46 @@ fn main() -> Result<(), Error> {
     }
     "#;
 
-//    let source = r#"
-//        fn quux(n: Int) -> Int {
-//            let sum = 0;
-//            while n > 0 {
-//                let sum = sum + n;
-//                let n = n - 1;
-//            }
-//            
-//            return sum;
-//        }
-//    
-//        {
-//            return quux(20000000);
-//        }
-//        "#;
+    //    let source = r#"
+    //        fn quux(n: Int) -> Int {
+    //            let sum = 0;
+    //            while n > 0 {
+    //                let sum = sum + n;
+    //                let n = n - 1;
+    //            }
+    //
+    //            return sum;
+    //        }
+    //
+    //        {
+    //            return quux(20000000);
+    //        }
+    //        "#;
 
-//    let source = r#"
-//    {
-//        print_line("What is your name?");
-//        print_line(format("Hello: ", read_line()));
-//    }
-//    "#;
+    //    let source = r#"
+    //    {
+    //        print_line("What is your name?");
+    //        print_line(format("Hello: ", read_line()));
+    //    }
+    //    "#;
+
+    let source = r#"
+    {
+        let xs = [1; 10];
+        return xs.[xs.[9]] + 2;
+    }
+    "#;
 
     let program = syntax::analyze(&source.chars().collect::<Vec<_>>())?;
-    let executable = bytecode::compiler::make(program);
-    let return_value = vm::interpret(executable);
-    println!("Returns: {return_value}");
+    //    let executable = bytecode::compiler::make(program);
+    //    let return_value = vm::interpret(executable);
+    //    println!("Returns: {return_value}");
 
-    // println!("{executable}");
+    //    println!("{executable}");
 
-    //    let interpreter = Interpreter::new(program, intrinsics::initialize());
-    //    let return_value = interpreter.run()?;
-    //    println!("{:#?}", return_value);
+    let interpreter = Interpreter::new(program, intrinsics::initialize());
+    let return_value = interpreter.run()?;
+    println!("{:#?}", return_value);
 
     Ok(())
 }

@@ -62,7 +62,9 @@ struct Thunk<A>(marker::PhantomData<A>);
 
 fn literal() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     // Is this perhaps left recursive?
-    constant().map(ast::Expression::Literal).or_else(array())
+    constant()
+        .map(ast::Expression::Literal)
+        .or_else(array_literal())
 }
 
 fn constant() -> impl Parser<In = lex::Token, Out = ast::Constant> {
@@ -99,7 +101,7 @@ impl Parser for Thunk<ast::Expression> {
     type Out = ast::Expression;
 
     fn parse(self, input: ParseState<Self::In>) -> ParseResult<Self::In, Self::Out> {
-        expression_inner().parse(input)
+        infix_expression().parse(input)
     }
 }
 
@@ -112,7 +114,7 @@ fn expression_core() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     .or_else(expression_rhs())
 }
 
-fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
+fn infix_expression() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     let level_1 = expect!(
         lex::Token::Separator(lex::Separator::Star) => ast::Operator::Times,
         lex::Token::Separator(lex::Separator::Slash) => ast::Operator::Divides,
@@ -137,11 +139,10 @@ fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     );
 
     let level_5 = expect!(
-        lex::Token::Keyword(lex::Keyword::And) => ast::Operator::And,
-        lex::Token::Keyword(lex::Keyword::Or) => ast::Operator::Or
+        lex::Token::Keyword(lex::Keyword::And) => ast::Operator::And
     );
 
-    let _level_6 = expect!(
+    let level_6 = expect!(
         lex::Token::Keyword(lex::Keyword::Or) => ast::Operator::Or
     );
 
@@ -151,9 +152,9 @@ fn expression_inner() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     let level_3 = infix_level(level_3, level_2);
     let level_4 = infix_level(level_4, level_3);
     let level_5 = infix_level(level_5, level_4);
-    //    let _level_6 = infix_level(level_6, level_5);
+    let level_6 = infix_level(level_6, level_5);
 
-    level_5
+    level_6
 }
 
 fn infix_level<O, L>(
@@ -176,7 +177,10 @@ where
 }
 
 fn expression_rhs() -> impl Parser<In = lex::Token, Out = ast::Expression> {
-    apply().or_else(literal()).or_else(variable())
+    array_read()
+        .or_else(apply())
+        .or_else(literal())
+        .or_else(variable())
 }
 
 fn apply() -> impl Parser<In = lex::Token, Out = ast::Expression> {
@@ -198,7 +202,7 @@ fn variable() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     identifier().map(|id| ast::Expression::Variable(ast::Select::Value(ast::Name::simple(&id))))
 }
 
-fn array() -> impl Parser<In = lex::Token, Out = ast::Expression> {
+fn array_literal() -> impl Parser<In = lex::Token, Out = ast::Expression> {
     let size = expect!(lex::Token::Literal(lex::Literal::Integer(x)) => *x);
     enclosed_within(
         separator(lex::Separator::LeftBracket),
@@ -211,6 +215,29 @@ fn array() -> impl Parser<In = lex::Token, Out = ast::Expression> {
         let array = ast::ArrayConstant::new(template, size as usize);
         ast::Expression::Literal(ast::Constant::Array(cell::RefCell::new(array)))
     })
+}
+
+fn array_read() -> impl Parser<In = lex::Token, Out = ast::Expression> {
+    //    expression()
+    identifier()
+        .skip_right(separator(lex::Separator::Period))
+        .and_also(enclosed_within(
+            separator(lex::Separator::LeftBracket),
+            separator(lex::Separator::RightBracket),
+            expression(),
+        ))
+        .map(|(array, subscript)| ast::Expression::ArrayRead {
+            // Limits to simple id.[subscript expr] expressions
+            // But I want to support:
+            //   foo("bar").[subscript expr]
+            // Perhaps I have to treat . as an operator with a high
+            // fixity level.
+            //            array: Box::new(array),
+            array: Box::new(ast::Expression::Variable(ast::Select::Value(
+                ast::Name::simple(&array),
+            ))),
+            subscript: Box::new(subscript),
+        })
 }
 
 fn statement() -> Thunk<ast::Statement> {
@@ -227,7 +254,7 @@ impl Parser for Thunk<ast::Statement> {
         if let Some(parsed) = parsed {
             ParseResult::accepted(state, parsed)
         } else {
-            println!("Failed at {:?}", state.at);
+//            println!("Failed at {:?}", state.at);
             ParseResult::balked(state)
         }
     }

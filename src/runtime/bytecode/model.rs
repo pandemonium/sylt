@@ -21,13 +21,20 @@ pub enum ValueArray {
     Text(Vec<Box<str>>),
 }
 
+fn comma_separate<A: fmt::Display>(xs: &[A]) -> String {
+    xs.iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 impl fmt::Display for ValueArray {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ValueArray::Int(xs) => write!(f, "int array [of {} elements]", xs.len()),
-            ValueArray::Float(xs) => write!(f, "int array [of {} elements]", xs.len()),
-            ValueArray::Boolean(xs) => write!(f, "int array [of {} elements]", xs.len()),
-            ValueArray::Text(xs) => write!(f, "int array [of {} elements]", xs.len()),
+            ValueArray::Int(xs) => write!(f, "[{}]", comma_separate(xs)),
+            ValueArray::Float(xs) => write!(f, "[{}]", comma_separate(xs)),
+            ValueArray::Boolean(xs) => write!(f, "[{}]", comma_separate(xs)),
+            ValueArray::Text(xs) => write!(f, "[{}]", comma_separate(xs)),
         }
     }
 }
@@ -159,7 +166,7 @@ impl fmt::Display for Value {
             Self::Boolean(x) => write!(f, "{}", if *x { "True" } else { "False" }),
             Self::Text(x) => write!(f, "'{x}'"),
             Self::Unit => write!(f, "()"),
-            Self::Array(..) => write!(f, "<<array>>"),
+            Self::Array(contents) => write!(f, "{}", contents.borrow()),
         }
     }
 }
@@ -243,7 +250,7 @@ impl fmt::Display for Bytecode {
             Bytecode::Array(ArrayOp::New(PrimitiveType::Boolean)) => write!(f, "boolean_array"),
             Bytecode::Array(ArrayOp::New(PrimitiveType::Text)) => write!(f, "text_array"),
             Bytecode::Array(ArrayOp::New(PrimitiveType::Unit)) => write!(f, "unit_array"),
-            Bytecode::Array(ArrayOp::New(PrimitiveType::Array)) => write!(f, "multi_array"),    // HMM. Do I support this?
+            Bytecode::Array(ArrayOp::New(PrimitiveType::Array)) => write!(f, "multi_array"), // HMM. Do I support this?
             Bytecode::Array(ArrayOp::Load) => write!(f, "array_load"),
             Bytecode::Array(ArrayOp::Store) => write!(f, "array_store"),
             Bytecode::Arithmetic(AluOp::Add) => write!(f, "add"),

@@ -495,6 +495,26 @@ mod tests {
     }
 
     #[test]
+    fn array_get() {
+        let input = r#"let x= xs.[ 10]  ;"#;
+        let was = run(&input.chars().collect::<Vec<_>>());
+        assert_eq!(
+            was.unwrap(),
+            vec![
+                T::Keyword(Keyword::Let),
+                T::Identifier(Identifier("x".into())),
+                T::Separator(Separator::Assign),
+                T::Identifier(Identifier("xs".into())),
+                T::Separator(Separator::Period),
+                T::Separator(Separator::LeftBracket),
+                T::Literal(Literal::Integer(10)),
+                T::Separator(Separator::RightBracket),
+                T::Separator(Separator::Semicolon),
+            ]
+        );
+    }
+
+    #[test]
     fn compound_separators() {
         let input = "fn foo() -> Int {while 2 >= 1 {} while  2 <= 1 {}}";
         let was = run(&input.chars().collect::<Vec<_>>());
