@@ -50,9 +50,12 @@ fn main() -> Result<(), Error> {
     //    "#;
 
     let source = r#"
+    fn get_to_the_choppah() -> Array {
+        return [2; 10];
+    }
+
     {
-        let xs = [1; 10];
-        return xs.[xs.[9]] + 2;
+        return get_to_the_choppah().[1 + 2];
     }
     "#;
 

@@ -164,7 +164,10 @@ impl<'a> ActivationFrame<'a> {
                 .get_local_variable(symbol)
                 .cloned()
                 .ok_or_else(|| Error::UnresolvedSymbol(symbol.name().clone())),
-            ast::Expression::ArrayRead { array, subscript } => {
+            ast::Expression::GetArrayElement { array, subscript } => {
+                self.get_array_element(array, subscript)
+            }
+            ast::Expression::PutArrayElement { array, subscript, element } => {
                 self.get_array_element(array, subscript)
             }
             ast::Expression::ApplyInfix { lhs, symbol, rhs } => {

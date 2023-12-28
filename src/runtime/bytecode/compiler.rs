@@ -173,7 +173,10 @@ impl Compile {
                     as u8;
                 self.emit(model::Bytecode::LoadLocal(slot))
             }
-            ast::Expression::ArrayRead { array, subscript } => {
+            ast::Expression::GetArrayElement { array, subscript } => {
+                todo!()
+            }
+            ast::Expression::PutArrayElement { array, subscript, element } => {
                 todo!()
             }
             ast::Expression::ApplyInfix { lhs, symbol, rhs } => {

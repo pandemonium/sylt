@@ -151,9 +151,14 @@ pub struct Block {
 pub enum Expression {
     Literal(Constant),
     Variable(Select),
-    ArrayRead {
+    GetArrayElement {
         array: Box<Expression>,
         subscript: Box<Expression>,
+    },
+    PutArrayElement {
+        array: Box<Expression>,
+        subscript: Box<Expression>,
+        element: Box<Expression>,
     },
     ApplyInfix {
         lhs: Box<Expression>,
