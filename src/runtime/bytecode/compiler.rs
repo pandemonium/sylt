@@ -174,10 +174,15 @@ impl Compile {
                 self.emit(model::Bytecode::LoadLocal(slot))
             }
             ast::Expression::GetArrayElement { array, subscript } => {
-                todo!()
+                self.expression(*array);
+                self.expression(*subscript);
+                self.emit(model::Bytecode::Array(model::ArrayOp::Load));
             }
             ast::Expression::PutArrayElement { array, subscript, element } => {
-                todo!()
+                self.expression(*array);
+                self.expression(*subscript);
+                self.expression(*element);
+                self.emit(model::Bytecode::Array(model::ArrayOp::Store));
             }
             ast::Expression::ApplyInfix { lhs, symbol, rhs } => {
                 self.expression(*lhs);
