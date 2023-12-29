@@ -177,16 +177,17 @@ where
 }
 
 fn expression_rhs() -> impl Parser<In = lex::Token, Out = ast::Expression> {
-    let subscript_sub_expr = separator(lex::Separator::Period).skip_left(array_subscript());
+    let subscript = separator(lex::Separator::Period).skip_left(array_subscript());
     let subscriptable = apply()
         .or_else(variable())
-        .and_also(subscript_sub_expr.optionally())
-        .map(|(parent, index)| match index {
-            Some(index) => ast::Expression::GetArrayElement {
-                array: Box::new(parent),
-                subscript: Box::new(index),
-            },
-            None => parent,
+        .and_also(subscript.zero_or_more())
+        .map(|(parent, indices)| {
+            indices
+                .into_iter()
+                .fold(parent, |parent, index| ast::Expression::GetArrayElement {
+                    array: Box::new(parent),
+                    subscript: Box::new(index),
+                })
         });
 
     subscriptable.or_else(literal())
